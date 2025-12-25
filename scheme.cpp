@@ -20,18 +20,20 @@ struct string_builder {
         *Current = '\0';
     }
 
-    void AppendChar(char c) {
+    string_builder& Char(char c) {
         *Current++ = c;
         *Current = '\0';
+        return *this;
     }
 
-    void AppendString(const char* Str) {
+    string_builder& String(const char* Str) {
         while (*Str) {
-            AppendChar(*Str++);
+            Char(*Str++);
         }
+        return *this;
     }
 
-    const char* GetString() const {
+    const char* Get() const {
         return Start;
     }
 };

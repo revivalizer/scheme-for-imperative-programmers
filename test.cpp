@@ -3,17 +3,17 @@
 #include <cstdlib>
 #include <cstdio>
 
-void Expect2(bool Condition, const char* ConditionString)
+void ExpectWithMessage(bool Condition, const char* Message)
 {
     if (!Condition) {
-        std::printf("\033[31mTest failed: %s\033[0m\n", ConditionString);
+        std::printf("\033[31mTest failed: %s\033[0m\n", Message);
         std::exit(EXIT_FAILURE);
     }
 
-    std::printf("%s\n", ConditionString);
+    std::printf("%s\n", Message);
 }
 
-#define Expect(CONDITION) Expect2(CONDITION, #CONDITION)
+#define Expect(CONDITION) ExpectWithMessage(CONDITION, #CONDITION)
 
 void StringHelperTests() {
     Expect(StringEqual("", "") == true);
@@ -25,11 +25,7 @@ void StringHelperTests() {
     string_builder Builder;
     Builder.Init(Buffer);
 
-    Builder.AppendChar('(');
-    Builder.AppendString("Hello ");
-    Builder.AppendString("world!");
-    Builder.AppendChar(')');
-    Expect(StringEqual(Builder.GetString(), "(Hello world!)"));
+    Expect(StringEqual(Builder.Char('(').String("Hello ").String("world!").Char(')').Get(), "(Hello world!)"));
 }
 
 int main(int argc, char** argv)
