@@ -102,7 +102,7 @@ struct parser {
         }
     }
 
-    void ParseSequenceUntil(string_builder* StringBuilder, char Delimiter, error* Error) {
+    void ParseSExpressionSequenceUntil(string_builder* StringBuilder, char Delimiter, error* Error) {
         int IndexCount = 0;
 
         int StartCol = Col - 1;
@@ -118,16 +118,16 @@ struct parser {
                 if (IndexCount > 0) {
                     StringBuilder->Char(' ');
                 }
-                Parse(StringBuilder, Error); CHECK_ERROR();
+                ParseSExpression(StringBuilder, Error); CHECK_ERROR();
                 IndexCount++;
             }
         }
     }
 
-    void Parse(string_builder* StringBuilder, error* Error) {
+    void ParseSExpression(string_builder* StringBuilder, error* Error) {
         if (Match('(')) {
             StringBuilder->Char('(');
-            ParseSequenceUntil(StringBuilder, ')', Error); CHECK_ERROR();
+            ParseSExpressionSequenceUntil(StringBuilder, ')', Error); CHECK_ERROR();
             StringBuilder->Char(')');
         } else if (Match('#')) {
             if (Match('t')) {

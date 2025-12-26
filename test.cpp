@@ -31,7 +31,7 @@ void ExpectParseResult(const char* Input, const char* Expected)
 
     parser Parser;
     Parser.Init(Input);
-    Parser.ParseSequenceUntil(&StringBuilder, '\0', &Error);
+    Parser.ParseSExpressionSequenceUntil(&StringBuilder, '\0', &Error);
 
     HandleParseError(Input, &Error);
 
@@ -59,7 +59,7 @@ void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int 
 
     parser Parser;
     Parser.Init(Input);
-    Parser.ParseSequenceUntil(&StringBuilder, '\0', &Error);
+    Parser.ParseSExpressionSequenceUntil(&StringBuilder, '\0', &Error);
 
     if (Error.Type != error::PARSE_ERROR) {
         std::printf("\033[31mExpected parse error but got none for input: \"%s\"\033[0m\n", Input);
