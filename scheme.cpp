@@ -38,6 +38,19 @@ struct string_builder {
     }
 };
 
+struct error {
+    enum type {
+        NO_ERROR = 0,
+        PARSE_ERROR,
+    };
+    type Type;
+    const char* Error;
+    int Row, Col;
+};
+
+#define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return; }
+#define PARSE_ERROR(ERROR, ROW, COL) { Error->Type = error::PARSE_ERROR; Error->Error = ERROR; Error->Row = ROW; Error->Col = COL; return; }
+
 struct parser {
 	const char* Current;
     int Col, Row;
@@ -69,52 +82,70 @@ struct parser {
         return C == ' ' || C == '\t' || C == '\n' || C == '\r';
     }
 
+    static bool IsAllowableSymbolCharacter(char C) {
+        return !(IsWhitespace(C) || C == '(' || C == ')' || C == '\0');
+    }
+
+    static bool IsAllowableSymbolStartCharacter(char C) {
+        return IsAllowableSymbolCharacter(C);
+    }
+
     void EatWhitespace() {
         while (IsWhitespace(C()) || C() == ';') {
             if (C() == '\n') {
+                Next();
                 Row++;
                 Col = 0;
-                Next();
             } else {
                 Next();
             }
         }
     }
 
-    // NOTE: Change to bool return false if no match
-    void ParseSequenceUntil(string_builder* StringBuilder, char Delimiter) {
+    void ParseSequenceUntil(string_builder* StringBuilder, char Delimiter, error* Error) {
         int IndexCount = 0;
+
+        int StartCol = Col - 1;
+        int StartRow = Row;
 
         while (true) {
             EatWhitespace();
             if (Match(Delimiter)) {
                 return;
+            } else if (Match('\0')) {
+                PARSE_ERROR("UNMATCHED_OPEN_PAREN", StartRow, StartCol); // In practice we are only looking for open parens
             } else {
                 if (IndexCount > 0) {
                     StringBuilder->Char(' ');
                 }
-                Parse(StringBuilder);
+                Parse(StringBuilder, Error); CHECK_ERROR();
                 IndexCount++;
             }
         }
     }
 
-    void Parse(string_builder* StringBuilder) {
+    void Parse(string_builder* StringBuilder, error* Error) {
         if (Match('(')) {
             StringBuilder->Char('(');
-            ParseSequenceUntil(StringBuilder, ')');
+            ParseSequenceUntil(StringBuilder, ')', Error); CHECK_ERROR();
             StringBuilder->Char(')');
         } else if (Match('#')) {
             if (Match('t')) {
                 StringBuilder->String("#t");
             } else if (Match('f')) {
                 StringBuilder->String("#f");
+            } else {
+                PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
             }
-        } else {
-            while (IsWhitespace(C())==false && C()!=0 && C()!='(' && C()!=')') {
+        } else if (IsAllowableSymbolStartCharacter(C())) {
+            StringBuilder->Char(C());
+            Next();
+            while (IsAllowableSymbolCharacter(C())) {
                 StringBuilder->Char(C());
                 Next();
             }
+        } else {
+            PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
         }
     }
 };

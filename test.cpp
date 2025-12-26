@@ -13,15 +13,27 @@ void ExpectWithMessage(bool Condition, const char* Message)
     std::printf("%s\n", Message);
 }
 
+void HandleParseError(const char* Input, error* Error)
+{
+    if (Error->Type == error::PARSE_ERROR) {
+        std::printf("\033[31mParse error for input \"%s\": \"%s\" at %d, %d\033[0m\n", Input, Error->Error, Error->Row, Error->Col);
+        std::exit(EXIT_FAILURE);
+    }
+}
+
 void ExpectParseResult(const char* Input, const char* Expected)
 {
     char Buffer[1024];
     string_builder StringBuilder;
     StringBuilder.Init(Buffer);
 
+    error Error = {};
+
     parser Parser;
     Parser.Init(Input);
-    Parser.ParseSequenceUntil(&StringBuilder, '\0');
+    Parser.ParseSequenceUntil(&StringBuilder, '\0', &Error);
+
+    HandleParseError(Input, &Error);
 
     const char* Actual = StringBuilder.Get();
     bool Equal = StringEqual(Actual, Expected);
@@ -35,6 +47,33 @@ void ExpectParseResult(const char* Input, const char* Expected)
         std::printf("\033[0m");
         std::exit(EXIT_FAILURE);
     }
+}
+
+void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int Col)
+{
+    char Buffer[1024];
+    string_builder StringBuilder;
+    StringBuilder.Init(Buffer);
+
+    error Error = {};
+
+    parser Parser;
+    Parser.Init(Input);
+    Parser.ParseSequenceUntil(&StringBuilder, '\0', &Error);
+
+    if (Error.Type != error::PARSE_ERROR) {
+        std::printf("\033[31mExpected parse error but got none for input: \"%s\"\033[0m\n", Input);
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!StringEqual(Error.Error, ErrorMessage) || Error.Row != Row || Error.Col != Col) {
+        std::printf("\033[31mParse error did not match expected for input: \"%s\"\033[0m\n", Input);
+        std::printf("Expected: \"%s\" at (%d, %d)\n", ErrorMessage, Row, Col);
+        std::printf("Got: \"%s\" at (%d, %d)\n", Error.Error, Error.Row, Error.Col);
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::printf("\"%s\" p-> \"%s\" at %d, %d\n", Input, ErrorMessage, Row, Col);
 }
 
 #define Expect(CONDITION) ExpectWithMessage(CONDITION, #CONDITION)
@@ -74,6 +113,15 @@ void BasicParseTests() {
     ExpectParseResult("(car (cdr (quote (a b c))))", "(car (cdr (quote (a b c))))");
 }
 
+void ParseErrorTests() {
+    ExpectParseError("(", "UNMATCHED_OPEN_PAREN", 0, 0);
+    ExpectParseError("( (a b c)", "UNMATCHED_OPEN_PAREN", 0, 0);
+    ExpectParseError("( (a b c", "UNMATCHED_OPEN_PAREN", 0, 2);
+    ExpectParseError("( \n (a b c", "UNMATCHED_OPEN_PAREN", 1, 1);
+    ExpectParseError(")", "UNEXPECTED_CHARACTER", 0, 0);
+    ExpectParseError("(#q)", "UNEXPECTED_CHARACTER", 0, 2);
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -81,6 +129,7 @@ int main(int argc, char** argv)
 
     StringHelperTests();
     BasicParseTests();
+    ParseErrorTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
