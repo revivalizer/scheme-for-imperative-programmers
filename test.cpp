@@ -1,7 +1,16 @@
+#include <cstdint>
+#include <cstddef>
+
 #include "scheme.cpp"
 
 #include <cstdlib>
 #include <cstdio>
+
+void FATAL_ERROR(const char* Message)
+{
+    std::printf("\033[31mFatal error: %s\033[0m\n", Message);
+    std::exit(EXIT_FAILURE);
+}
 
 void ExpectWithMessage(bool Condition, const char* Message)
 {
@@ -12,6 +21,8 @@ void ExpectWithMessage(bool Condition, const char* Message)
 
     std::printf("%s\n", Message);
 }
+
+#define Expect(CONDITION) ExpectWithMessage(CONDITION, #CONDITION)
 
 void HandleParseError(const char* Input, error* Error)
 {
@@ -76,7 +87,25 @@ void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int 
     std::printf("\"%s\" p-> \"%s\" at %d, %d\n", Input, ErrorMessage, Row, Col);
 }
 
-#define Expect(CONDITION) ExpectWithMessage(CONDITION, #CONDITION)
+void ExpectValueToStringResult(value* Value, const char* Expected) {
+    char Buffer[256];
+    string_builder StringBuilder;
+    StringBuilder.Init(Buffer);
+
+    ValueToString(Value, &StringBuilder);
+    const char* Actual = StringBuilder.Get();
+    bool Equal = StringEqual(Actual, Expected);
+
+    if (Equal) {
+        std::printf("ValueToString: \"%s\"\n", Actual);
+    } else {
+        std::printf("\033[31m");
+        std::printf("ValueToString test failed: Expected \"%s\"\n", Expected);
+        std::printf("Got: \"%s\"\n", Actual);
+        std::printf("\033[0m");
+        std::exit(EXIT_FAILURE);
+    }
+}
 
 void StringHelperTests() {
     Expect(StringEqual("", "") == true);
@@ -122,6 +151,108 @@ void ParseErrorTests() {
     ExpectParseError("(#q)", "UNEXPECTED_CHARACTER", 0, 2);
 }
 
+static const int ValuePoolCapacity = 100;
+value ValuePool[ValuePoolCapacity];
+
+void ValueTests() {
+    value TestValue = {value::SYMBOL, { .Symbol = "test" }};
+
+    // +-----+-----+
+    // |     |     | -->   [nil]
+    // +-----+-----+
+    //   |
+    // [#f]
+    //
+    value FalseListValue = {value::PAIR, { .Pair = { &value::False, &value::Nil }}};
+
+    // +-----+-----+     +-----+-----+
+    // |     |     | --> |     |     | -->   [nil]
+    // +-----+-----+     +-----+-----+
+    //   |                 |
+    // [test]            [#f]
+    //
+    value TestFalseListValue = { value::PAIR, { .Pair = { &TestValue, &FalseListValue }}};
+
+
+    // +-----+-----+     +-----+-----+     +-----+-----+
+    // |     |     | --> |     |     | --> |     |     | -->   [nil]
+    // +-----+-----+     +-----+-----+     +-----+-----+
+    //   |                 |                 |
+    // [#t]              [test]            [#f]
+    //
+    value TrueTestFalseListValue = { value::PAIR, { .Pair = { &value::True, &TestFalseListValue }}};
+
+    // +-----+-----+     +-----+-----+
+    // |     |     | --> |     |     | -->   [nil]
+    // +-----+-----+     +-----+-----+
+    //    |               |
+    //    |              [#f]
+    //    v
+    // +-----+-----+     +-----+-----+     +-----+-----+
+    // |     |     | --> |     |     | --> |     |     | -->   [nil]
+    // +-----+-----+     +-----+-----+     +-----+-----+
+    //   |                 |                 |
+    // [#t]              [test]            [#f]
+    //
+    value ListInListValue = { value::PAIR,{ .Pair = { &TrueTestFalseListValue, &FalseListValue }}};
+
+    ExpectValueToStringResult(&value::False, "#f");
+    ExpectValueToStringResult(&TestValue, "test");
+    ExpectValueToStringResult(&FalseListValue, "(#f)");
+    ExpectValueToStringResult(&TestFalseListValue, "(test #f)");
+    ExpectValueToStringResult(&TrueTestFalseListValue, "(#t test #f)");
+    ExpectValueToStringResult(&ListInListValue, "((#t test #f) #f)");
+}
+
+// void ValueTests() {
+//     mem Mem;
+//     Mem.Init(ValuePool, ValuePoolCapacity, malloc);
+
+//     value* TestValue = Mem.AllocSymbol("test");
+
+//     // +-----+-----+
+//     // | car | cdr | -->   [nil]
+//     // +-----+-----+
+//     //   |
+//     // [#f]
+//     value* FalseListValue = Mem.AllocPair(&value::False, &value::Nil);
+
+//     // +-----+-----+     +-----+-----+
+//     // | car | cdr | --> | car | cdr | -->   [nil]
+//     // +-----+-----+     +-----+-----+
+//     //   |                 |
+//     // [test]            [#f]
+//     value* TestFalseListValue = Mem.AllocPair(TestValue, FalseListValue);
+
+
+//     // +-----+-----+     +-----+-----+     +-----+-----+
+//     // | car | cdr | --> | car | cdr | --> | car | cdr | -->   [nil]
+//     // +-----+-----+     +-----+-----+     +-----+-----+
+//     //   |                 |                 |
+//     // [#t]              [test]            [#f]
+//     value* TrueTestFalseListValue = Mem.AllocPair(&value::True, TestFalseListValue);
+
+//     // +-----+-----+     +-----+-----+
+//     // | car | cdr | --> | car | cdr | -->   [nil]
+//     // +-----+-----+     +-----+-----+
+//     //    |               |
+//     //    |              [#f]
+//     //    v
+//     // +-----+-----+     +-----+-----+     +-----+-----+
+//     // | car | cdr | --> | car | cdr | --> | car | cdr | -->   [nil]
+//     // +-----+-----+     +-----+-----+     +-----+-----+
+//     //   |                 |                 |
+//     // [#t]              [test]            [#f]
+//     value* ListInListValue = Mem.AllocPair(TrueTestFalseListValue, FalseListValue);
+
+//     ExpectValueToStringResult(&value::False, "#f");
+//     ExpectValueToStringResult(TestValue, "test");
+//     ExpectValueToStringResult(FalseListValue, "(#f)");
+//     ExpectValueToStringResult(TestFalseListValue, "(test #f)");
+//     ExpectValueToStringResult(TrueTestFalseListValue, "(#t test #f)");
+//     ExpectValueToStringResult(ListInListValue, "((#t test #f) #f)");
+// }
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -130,6 +261,7 @@ int main(int argc, char** argv)
     StringHelperTests();
     BasicParseTests();
     ParseErrorTests();
+    ValueTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

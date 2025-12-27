@@ -1,3 +1,12 @@
+void FATAL_ERROR(const char* Message);
+
+int StringLength(const char* Str)
+{
+    int Length = 0;
+    while (*Str++) Length++;
+    return Length;
+}
+
 bool StringEqual(const char* Str1, const char* Str2)
 {
     while (*Str1 && *Str2)
@@ -16,7 +25,11 @@ struct string_builder {
 
     void Init(char* Buffer) {
         Start = Buffer;
-        Current = Buffer;
+        Reset();
+    }
+
+    void Reset() {
+        Current = Start;
         *Current = '\0';
     }
 
@@ -48,8 +61,8 @@ struct error {
     int Row, Col;
 };
 
-#define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return; }
 #define PARSE_ERROR(ERROR, ROW, COL) { Error->Type = error::PARSE_ERROR; Error->Error = ERROR; Error->Row = ROW; Error->Col = COL; return; }
+#define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return; }
 
 struct parser {
 	const char* Current;
@@ -149,3 +162,115 @@ struct parser {
         }
     }
 };
+
+struct value {
+    enum type {
+        NIL,
+        BOOLEAN,
+        SYMBOL,
+        PAIR,
+    };
+
+    struct pair {
+        value* Car;
+        value* Cdr;
+    };
+
+    type Type;
+    union {
+        bool Boolean;
+        const char* Symbol;
+        pair Pair;
+    };
+
+    static value Nil;
+    static value True;
+    static value False;
+};
+
+value value::Nil   = { value::NIL, { false } };
+value value::True  = { value::BOOLEAN, { true } };
+value value::False = { value::BOOLEAN, { false } };
+
+// struct mem {
+//     typedef void* (*alloc_func)(size_t NumBytes);
+
+//     value* ValuePool;
+//     int ValueCapacity;
+//     alloc_func AllocFunc;
+
+//     void Init(value* Pool, int Capacity, alloc_func Alloc) {
+//         ValuePool = Pool;
+//         ValueCapacity = Capacity;
+//         AllocFunc = Alloc;
+//     }
+
+//     value* AllocCell(value::type Type = value::NIL) {
+//         for (int i=0; i<ValueCapacity; i++) {
+//             if (ValuePool[i].IsAlive == false) {
+//                 ValuePool[i] = {};
+//                 ValuePool[i].Type = Type;
+//                 ValuePool[i].IsAlive = true;
+//                 return &ValuePool[i];
+//             }
+//         }
+//         FATAL_ERROR("AllocCellOOM");
+//         return nullptr;
+//     }
+
+//     value* AllocPair(value* Car, value* Cdr) {
+//         value* Cell = AllocCell(value::PAIR);
+//         Cell->Pair.Car = Car;
+//         Cell->Pair.Cdr = Cdr;
+//         return Cell;
+//     }
+
+//     value* AllocSymbol(const char* ZeroTerminatedSymbol) {
+//         return AllocSymbol(ZeroTerminatedSymbol, ZeroTerminatedSymbol + StringLength(ZeroTerminatedSymbol));
+//     }
+
+//     value* AllocSymbol(const char* SymbolStart, const char* SymbolEnd) {
+//         size_t Length = size_t(SymbolEnd - SymbolStart);
+//         char* Buffer = (char*)AllocFunc(Length + 1);
+//         for (size_t i=0; i<Length; i++) {
+//             Buffer[i] = SymbolStart[i];
+//         }
+//         Buffer[Length] = '\0';
+//         value* Symbol = AllocCell(value::SYMBOL);
+//         Symbol->Symbol = Buffer;
+//         return Symbol;
+//     }
+// };
+
+void ValueToString(value* Value, string_builder* StringBuilder) {
+    switch (Value->Type) {
+        case value::NIL: {
+            StringBuilder->String("()");
+        } break;
+        case value::BOOLEAN: {
+            if (Value->Boolean) {
+                StringBuilder->String("#t");
+            } else {
+                StringBuilder->String("#f");
+            }
+        } break;
+        case value::SYMBOL: {
+            StringBuilder->String(Value->Symbol);
+        } break;
+        case value::PAIR: {
+            StringBuilder->Char('(');
+            ValueToString(Value->Pair.Car, StringBuilder);
+            value* Rest = Value->Pair.Cdr;
+            while (Rest->Type == value::PAIR) {
+                StringBuilder->Char(' ');
+                ValueToString(Rest->Pair.Car, StringBuilder);
+                Rest = Rest->Pair.Cdr;
+            }
+            if (Rest->Type != value::NIL) {
+                StringBuilder->String(" . ");
+                ValueToString(Rest, StringBuilder);
+            }
+            StringBuilder->Char(')');
+        } break;
+    }
+}
