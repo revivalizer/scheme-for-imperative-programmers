@@ -151,11 +151,8 @@ void ParseErrorTests() {
     ExpectParseError("(#q)", "UNEXPECTED_CHARACTER", 0, 2);
 }
 
-static const int ValuePoolCapacity = 100;
-value ValuePool[ValuePoolCapacity];
-
 void ValueTests() {
-    value TestValue = {value::SYMBOL, { .Symbol = "test" }};
+    value TestValue = {true, value::SYMBOL, { .Symbol = "test" }};
 
     // +-----+-----+
     // |     |     | -->   [nil]
@@ -163,7 +160,7 @@ void ValueTests() {
     //   |
     // [#f]
     //
-    value FalseListValue = {value::PAIR, { .Pair = { &value::False, &value::Nil }}};
+    value FalseListValue = {true, value::PAIR, { .Pair = { &value::False, &value::Nil }}};
 
     // +-----+-----+     +-----+-----+
     // |     |     | --> |     |     | -->   [nil]
@@ -171,7 +168,7 @@ void ValueTests() {
     //   |                 |
     // [test]            [#f]
     //
-    value TestFalseListValue = { value::PAIR, { .Pair = { &TestValue, &FalseListValue }}};
+    value TestFalseListValue = {true, value::PAIR, { .Pair = { &TestValue, &FalseListValue }}};
 
 
     // +-----+-----+     +-----+-----+     +-----+-----+
@@ -180,7 +177,7 @@ void ValueTests() {
     //   |                 |                 |
     // [#t]              [test]            [#f]
     //
-    value TrueTestFalseListValue = { value::PAIR, { .Pair = { &value::True, &TestFalseListValue }}};
+    value TrueTestFalseListValue = {true, value::PAIR, { .Pair = { &value::True, &TestFalseListValue }}};
 
     // +-----+-----+     +-----+-----+
     // |     |     | --> |     |     | -->   [nil]
@@ -194,7 +191,7 @@ void ValueTests() {
     //   |                 |                 |
     // [#t]              [test]            [#f]
     //
-    value ListInListValue = { value::PAIR,{ .Pair = { &TrueTestFalseListValue, &FalseListValue }}};
+    value ListInListValue = {true, value::PAIR, { .Pair = { &TrueTestFalseListValue, &FalseListValue }}};
 
     ExpectValueToStringResult(&value::False, "#f");
     ExpectValueToStringResult(&TestValue, "test");
@@ -204,54 +201,26 @@ void ValueTests() {
     ExpectValueToStringResult(&ListInListValue, "((#t test #f) #f)");
 }
 
-// void ValueTests() {
-//     mem Mem;
-//     Mem.Init(ValuePool, ValuePoolCapacity, malloc);
+void ValuePoolAllocTests() {
+    static const int ValuePoolCapacity = 100;
+    value ValuePool[ValuePoolCapacity] = {};
 
-//     value* TestValue = Mem.AllocSymbol("test");
+    mem Mem;
+    Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
 
-//     // +-----+-----+
-//     // | car | cdr | -->   [nil]
-//     // +-----+-----+
-//     //   |
-//     // [#f]
-//     value* FalseListValue = Mem.AllocPair(&value::False, &value::Nil);
+    value* TestValue = Mem.AllocSymbol("test");
+    value* FalseListValue = Mem.AllocPair(&value::False, &value::Nil);
+    value* TestFalseListValue = Mem.AllocPair(TestValue, FalseListValue);
+    value* TrueTestFalseListValue = Mem.AllocPair(&value::True, TestFalseListValue);
+    value* ListInListValue = Mem.AllocPair(TrueTestFalseListValue, FalseListValue);
 
-//     // +-----+-----+     +-----+-----+
-//     // | car | cdr | --> | car | cdr | -->   [nil]
-//     // +-----+-----+     +-----+-----+
-//     //   |                 |
-//     // [test]            [#f]
-//     value* TestFalseListValue = Mem.AllocPair(TestValue, FalseListValue);
-
-
-//     // +-----+-----+     +-----+-----+     +-----+-----+
-//     // | car | cdr | --> | car | cdr | --> | car | cdr | -->   [nil]
-//     // +-----+-----+     +-----+-----+     +-----+-----+
-//     //   |                 |                 |
-//     // [#t]              [test]            [#f]
-//     value* TrueTestFalseListValue = Mem.AllocPair(&value::True, TestFalseListValue);
-
-//     // +-----+-----+     +-----+-----+
-//     // | car | cdr | --> | car | cdr | -->   [nil]
-//     // +-----+-----+     +-----+-----+
-//     //    |               |
-//     //    |              [#f]
-//     //    v
-//     // +-----+-----+     +-----+-----+     +-----+-----+
-//     // | car | cdr | --> | car | cdr | --> | car | cdr | -->   [nil]
-//     // +-----+-----+     +-----+-----+     +-----+-----+
-//     //   |                 |                 |
-//     // [#t]              [test]            [#f]
-//     value* ListInListValue = Mem.AllocPair(TrueTestFalseListValue, FalseListValue);
-
-//     ExpectValueToStringResult(&value::False, "#f");
-//     ExpectValueToStringResult(TestValue, "test");
-//     ExpectValueToStringResult(FalseListValue, "(#f)");
-//     ExpectValueToStringResult(TestFalseListValue, "(test #f)");
-//     ExpectValueToStringResult(TrueTestFalseListValue, "(#t test #f)");
-//     ExpectValueToStringResult(ListInListValue, "((#t test #f) #f)");
-// }
+    ExpectValueToStringResult(&value::False, "#f");
+    ExpectValueToStringResult(TestValue, "test");
+    ExpectValueToStringResult(FalseListValue, "(#f)");
+    ExpectValueToStringResult(TestFalseListValue, "(test #f)");
+    ExpectValueToStringResult(TrueTestFalseListValue, "(#t test #f)");
+    ExpectValueToStringResult(ListInListValue, "((#t test #f) #f)");
+}
 
 int main(int argc, char** argv)
 {
@@ -262,6 +231,7 @@ int main(int argc, char** argv)
     BasicParseTests();
     ParseErrorTests();
     ValueTests();
+    ValuePoolAllocTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

@@ -176,6 +176,7 @@ struct value {
         value* Cdr;
     };
 
+    bool IsAlive;
     type Type;
     union {
         bool Boolean;
@@ -188,59 +189,59 @@ struct value {
     static value False;
 };
 
-value value::Nil   = { value::NIL, { false } };
-value value::True  = { value::BOOLEAN, { true } };
-value value::False = { value::BOOLEAN, { false } };
+value value::Nil   = { true, value::NIL, { false } };
+value value::True  = { true, value::BOOLEAN, { true } };
+value value::False = { true, value::BOOLEAN, { false } };
 
-// struct mem {
-//     typedef void* (*alloc_func)(size_t NumBytes);
+struct mem {
+    typedef void* (*alloc_func)(size_t NumBytes);
 
-//     value* ValuePool;
-//     int ValueCapacity;
-//     alloc_func AllocFunc;
+    value* ValuePool;
+    int ValueCapacity;
+    alloc_func AllocFunc;
 
-//     void Init(value* Pool, int Capacity, alloc_func Alloc) {
-//         ValuePool = Pool;
-//         ValueCapacity = Capacity;
-//         AllocFunc = Alloc;
-//     }
+    void Init(value* Pool, int Capacity, alloc_func Alloc) {
+        ValuePool = Pool;
+        ValueCapacity = Capacity;
+        AllocFunc = Alloc;
+    }
 
-//     value* AllocCell(value::type Type = value::NIL) {
-//         for (int i=0; i<ValueCapacity; i++) {
-//             if (ValuePool[i].IsAlive == false) {
-//                 ValuePool[i] = {};
-//                 ValuePool[i].Type = Type;
-//                 ValuePool[i].IsAlive = true;
-//                 return &ValuePool[i];
-//             }
-//         }
-//         FATAL_ERROR("AllocCellOOM");
-//         return nullptr;
-//     }
+    value* AllocCell(value::type Type = value::NIL) {
+        for (int i=0; i<ValueCapacity; i++) {
+            if (ValuePool[i].IsAlive == false) {
+                ValuePool[i] = {};
+                ValuePool[i].Type = Type;
+                ValuePool[i].IsAlive = true;
+                return &ValuePool[i];
+            }
+        }
+        FATAL_ERROR("AllocCellOOM");
+        return nullptr;
+    }
 
-//     value* AllocPair(value* Car, value* Cdr) {
-//         value* Cell = AllocCell(value::PAIR);
-//         Cell->Pair.Car = Car;
-//         Cell->Pair.Cdr = Cdr;
-//         return Cell;
-//     }
+    value* AllocPair(value* Car, value* Cdr) {
+        value* Cell = AllocCell(value::PAIR);
+        Cell->Pair.Car = Car;
+        Cell->Pair.Cdr = Cdr;
+        return Cell;
+    }
 
-//     value* AllocSymbol(const char* ZeroTerminatedSymbol) {
-//         return AllocSymbol(ZeroTerminatedSymbol, ZeroTerminatedSymbol + StringLength(ZeroTerminatedSymbol));
-//     }
+    value* AllocSymbol(const char* ZeroTerminatedSymbol) {
+        return AllocSymbol(ZeroTerminatedSymbol, ZeroTerminatedSymbol + StringLength(ZeroTerminatedSymbol));
+    }
 
-//     value* AllocSymbol(const char* SymbolStart, const char* SymbolEnd) {
-//         size_t Length = size_t(SymbolEnd - SymbolStart);
-//         char* Buffer = (char*)AllocFunc(Length + 1);
-//         for (size_t i=0; i<Length; i++) {
-//             Buffer[i] = SymbolStart[i];
-//         }
-//         Buffer[Length] = '\0';
-//         value* Symbol = AllocCell(value::SYMBOL);
-//         Symbol->Symbol = Buffer;
-//         return Symbol;
-//     }
-// };
+    value* AllocSymbol(const char* SymbolStart, const char* SymbolEnd) {
+        size_t Length = size_t(SymbolEnd - SymbolStart);
+        char* Buffer = (char*)AllocFunc(Length + 1);
+        for (size_t i=0; i<Length; i++) {
+            Buffer[i] = SymbolStart[i];
+        }
+        Buffer[Length] = '\0';
+        value* Symbol = AllocCell(value::SYMBOL);
+        Symbol->Symbol = Buffer;
+        return Symbol;
+    }
+};
 
 void ValueToString(value* Value, string_builder* StringBuilder) {
     switch (Value->Type) {
