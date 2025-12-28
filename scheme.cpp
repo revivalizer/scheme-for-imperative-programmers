@@ -55,112 +55,11 @@ struct error {
     enum type {
         NO_ERROR = 0,
         PARSE_ERROR,
+        EVAL_ERROR,
     };
     type Type;
     const char* Error;
     int Row, Col;
-};
-
-#define PARSE_ERROR(ERROR, ROW, COL) { Error->Type = error::PARSE_ERROR; Error->Error = ERROR; Error->Row = ROW; Error->Col = COL; return; }
-#define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return; }
-
-struct parser {
-	const char* Current;
-    int Col, Row;
-
-    void Init(const char* Start) {
-		Current = Start;
-		Col = 0;
-		Row = 0;
-	}
-
-    char C() {
-        return Current[0];
-    }
-
-    void Next() {
-        Current++;
-        Col++;
-    }
-
-    bool Match(char Char) {
-        if (C() == Char) {
-            Next();
-            return true;
-        }
-        return false;
-    }
-
-    static bool IsWhitespace(char C) {
-        return C == ' ' || C == '\t' || C == '\n' || C == '\r';
-    }
-
-    static bool IsAllowableSymbolCharacter(char C) {
-        return !(IsWhitespace(C) || C == '(' || C == ')' || C == '\0');
-    }
-
-    static bool IsAllowableSymbolStartCharacter(char C) {
-        return IsAllowableSymbolCharacter(C);
-    }
-
-    void EatWhitespace() {
-        while (IsWhitespace(C()) || C() == ';') {
-            if (C() == '\n') {
-                Next();
-                Row++;
-                Col = 0;
-            } else {
-                Next();
-            }
-        }
-    }
-
-    void ParseSExpressionSequenceUntil(string_builder* StringBuilder, char Delimiter, error* Error) {
-        int IndexCount = 0;
-
-        int StartCol = Col - 1;
-        int StartRow = Row;
-
-        while (true) {
-            EatWhitespace();
-            if (Match(Delimiter)) {
-                return;
-            } else if (Match('\0')) {
-                PARSE_ERROR("UNMATCHED_OPEN_PAREN", StartRow, StartCol); // In practice we are only looking for open parens
-            } else {
-                if (IndexCount > 0) {
-                    StringBuilder->Char(' ');
-                }
-                ParseSExpression(StringBuilder, Error); CHECK_ERROR();
-                IndexCount++;
-            }
-        }
-    }
-
-    void ParseSExpression(string_builder* StringBuilder, error* Error) {
-        if (Match('(')) {
-            StringBuilder->Char('(');
-            ParseSExpressionSequenceUntil(StringBuilder, ')', Error); CHECK_ERROR();
-            StringBuilder->Char(')');
-        } else if (Match('#')) {
-            if (Match('t')) {
-                StringBuilder->String("#t");
-            } else if (Match('f')) {
-                StringBuilder->String("#f");
-            } else {
-                PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
-            }
-        } else if (IsAllowableSymbolStartCharacter(C())) {
-            StringBuilder->Char(C());
-            Next();
-            while (IsAllowableSymbolCharacter(C())) {
-                StringBuilder->Char(C());
-                Next();
-            }
-        } else {
-            PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
-        }
-    }
 };
 
 struct value {
@@ -243,6 +142,103 @@ struct mem {
     }
 };
 
+struct context {
+    mem* Mem;
+};
+
+#define PARSE_ERROR(ERROR, ROW, COL) { Error->Type = error::PARSE_ERROR; Error->Error = ERROR; Error->Row = ROW; Error->Col = COL; return 0; }
+#define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return 0; }
+
+struct parser {
+	const char* Current;
+    int Col, Row;
+
+    void Init(const char* Start) {
+		Current = Start;
+		Col = 0;
+		Row = 0;
+	}
+
+    char C() {
+        return Current[0];
+    }
+
+    void Next() {
+        Current++;
+        Col++;
+    }
+
+    bool Match(char Char) {
+        if (C() == Char) {
+            Next();
+            return true;
+        }
+        return false;
+    }
+
+    static bool IsWhitespace(char C) {
+        return C == ' ' || C == '\t' || C == '\n' || C == '\r';
+    }
+
+    static bool IsAllowableSymbolCharacter(char C) {
+        return !(IsWhitespace(C) || C == '(' || C == ')' || C == '\0');
+    }
+
+    static bool IsAllowableSymbolStartCharacter(char C) {
+        return IsAllowableSymbolCharacter(C);
+    }
+
+    void EatWhitespace() {
+        while (IsWhitespace(C()) || C() == ';') {
+            if (C() == '\n') {
+                Next();
+                Row++;
+                Col = 0;
+            } else {
+                Next();
+            }
+        }
+    }
+
+    value* ParseSExpressionSequenceUntil(char Delimiter, context* Context, error* Error, int ParenOpenRow = 0, int ParenOpenCol = 0) {
+        while (true) {
+            EatWhitespace();
+            if (Match(Delimiter)) {
+                return &value::Nil;
+            } else if (Match('\0')) {
+                PARSE_ERROR("UNMATCHED_OPEN_PAREN", ParenOpenRow, ParenOpenCol); // In practice we are only looking for open parens
+            } else {
+                value* Car = ParseSExpression(Context, Error); CHECK_ERROR();
+                value* Cdr = ParseSExpressionSequenceUntil(Delimiter, Context, Error, ParenOpenRow, ParenOpenCol); CHECK_ERROR();
+                return Context->Mem->AllocPair(Car, Cdr);
+            }
+        }
+    }
+
+    value* ParseSExpression(context* Context, error* Error) {
+        if (Match('(')) {
+            return ParseSExpressionSequenceUntil(')', Context, Error, Row, Col - 1);
+        } else if (Match('#')) {
+            if (Match('t')) {
+                return &value::True;
+            } else if (Match('f')) {
+                return &value::False;;
+            } else {
+                PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
+            }
+        } else if (IsAllowableSymbolStartCharacter(C())) {
+            const char* SymbolStart = Current;
+            Next();
+            while (IsAllowableSymbolCharacter(C())) {
+                Next();
+            }
+            return Context->Mem->AllocSymbol(SymbolStart, Current);
+        } else {
+            PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
+        }
+    }
+};
+
 void ValueToString(value* Value, string_builder* StringBuilder) {
     switch (Value->Type) {
         case value::NIL: {
@@ -275,3 +271,45 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
         } break;
     }
 }
+
+#define EVAL_ERROR(ERROR) { Error->Type = error::EVAL_ERROR; Error->Error = ERROR; return 0; }
+#define EVAL_ASSERT(CONDITION, ERROR) { if (!(CONDITION)) { EVAL_ERROR(ERROR); } }
+
+int ListLength(value* List) {
+    int Length = 0;
+    while (List->Type == value::PAIR) {
+        Length++;
+        List = List->Pair.Cdr;
+    }
+    return Length;
+}
+
+struct eval {
+    static value* Eval(value* Expr, context* Context, error* Error) {
+        (void)Context;
+        switch (Expr->Type) {
+            case value::NIL:
+            case value::BOOLEAN:
+            case value::SYMBOL:
+                {
+                    return Expr;
+                } break;
+
+            case value::PAIR: {
+                value* UnevaluatedOperator = Expr->Pair.Car;
+                value* Arguments = Expr->Pair.Cdr;
+
+                if (UnevaluatedOperator->Type == value::SYMBOL) {
+                    if (StringEqual(UnevaluatedOperator->Symbol, "quote")) {
+                        EVAL_ASSERT(ListLength(Arguments) == 1, "QUOTE_ARGUMENT_ERROR");
+                        return Arguments->Pair.Car;
+                    }
+                }
+            }
+
+            default: {
+                EVAL_ERROR("UNHANDLED_EXPRESSION_TYPE");
+            }
+        }
+    }
+};

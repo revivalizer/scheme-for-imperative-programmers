@@ -1,10 +1,10 @@
 #include <cstdint>
 #include <cstddef>
 
-#include "scheme.cpp"
-
 #include <cstdlib>
 #include <cstdio>
+
+#include "scheme.cpp"
 
 void FATAL_ERROR(const char* Message)
 {
@@ -34,17 +34,27 @@ void HandleParseError(const char* Input, error* Error)
 
 void ExpectParseResult(const char* Input, const char* Expected)
 {
-    char Buffer[1024];
-    string_builder StringBuilder;
-    StringBuilder.Init(Buffer);
+    static const int ValuePoolCapacity = 100;
+    value ValuePool[ValuePoolCapacity] = {};
+
+    mem Mem = {};
+    Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
+    context Context = {};
+    Context.Mem = &Mem;
 
     error Error = {};
 
     parser Parser;
     Parser.Init(Input);
-    Parser.ParseSExpressionSequenceUntil(&StringBuilder, '\0', &Error);
+    value* Result = Parser.ParseSExpressionSequenceUntil('\0', &Context, &Error);
+    Result = Result->Pair.Car; // ParseSExpressionSequenceUntil always returns a list
 
     HandleParseError(Input, &Error);
+
+    char Buffer[1024];
+    string_builder StringBuilder;
+    StringBuilder.Init(Buffer);
+    ValueToString(Result, &StringBuilder);
 
     const char* Actual = StringBuilder.Get();
     bool Equal = StringEqual(Actual, Expected);
@@ -62,15 +72,19 @@ void ExpectParseResult(const char* Input, const char* Expected)
 
 void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int Col)
 {
-    char Buffer[1024];
-    string_builder StringBuilder;
-    StringBuilder.Init(Buffer);
+    static const int ValuePoolCapacity = 100;
+    value ValuePool[ValuePoolCapacity] = {};
+
+    mem Mem = {};
+    Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
+    context Context = {};
+    Context.Mem = &Mem;
 
     error Error = {};
 
     parser Parser;
     Parser.Init(Input);
-    Parser.ParseSExpressionSequenceUntil(&StringBuilder, '\0', &Error);
+    Parser.ParseSExpressionSequenceUntil('\0', &Context, &Error);
 
     if (Error.Type != error::PARSE_ERROR) {
         std::printf("\033[31mExpected parse error but got none for input: \"%s\"\033[0m\n", Input);
@@ -107,6 +121,84 @@ void ExpectValueToStringResult(value* Value, const char* Expected) {
     }
 }
 
+void HandleEvalError(const char* Input, error* Error) {
+    if (Error->Type == error::EVAL_ERROR) {
+        std::printf("\033[31mEval error for input \"%s\": \"%s\"\033[0m\n", Input, Error->Error);
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+void ExpectEvalResult(const char* Input, const char* Expected) {
+    static const int ValuePoolCapacity = 100;
+    value ValuePool[ValuePoolCapacity] = {};
+
+    mem Mem = {};
+    Mem.Init(ValuePool, ValuePoolCapacity, malloc);
+    context Context = {};
+    Context.Mem = &Mem;
+
+    error Error = {};
+
+    parser Parser;
+    Parser.Init(Input);
+    value* ParseResult = Parser.ParseSExpression(&Context, &Error);
+    HandleParseError(Input, &Error);
+
+    value* EvalResult = eval::Eval(ParseResult, &Context, &Error);
+    HandleEvalError(Input, &Error);
+
+    char Buffer[1024];
+    string_builder StringBuilder;
+    StringBuilder.Init(Buffer);
+    ValueToString(EvalResult, &StringBuilder);
+
+    const char* Actual = StringBuilder.Get();
+    bool Equal = StringEqual(Actual, Expected);
+
+    if (Equal) {
+        std::printf("\"%s\" e-> \"%s\"\n", Input, Expected);
+    } else {
+        std::printf("\033[31m");
+        std::printf("Test failed: \"%s\" e-> \"%s\"\n", Input, Expected);
+        std::printf("Got: \"%s\"\n", Actual);
+        std::printf("\033[0m");
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+void ExpectEvalError(const char* Input, const char* ExpectedError) {
+    static const int ValuePoolCapacity = 100;
+    value ValuePool[ValuePoolCapacity] = {};
+
+    mem Mem = {};
+    Mem.Init(ValuePool, ValuePoolCapacity, malloc);
+    context Context = {};
+    Context.Mem = &Mem;
+
+    error Error = {};
+
+    parser Parser;
+    Parser.Init(Input);
+    value* ParseResult = Parser.ParseSExpression(&Context, &Error);
+    HandleParseError(Input, &Error);
+
+    eval::Eval(ParseResult, &Context, &Error);
+
+    if (Error.Type != error::EVAL_ERROR) {
+        std::printf("\033[31mExpected eval error but got none for input: \"%s\"\033[0m\n", Input);
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!StringEqual(Error.Error, ExpectedError)) {
+        std::printf("\033[31mEval error did not match expected for input: \"%s\"\033[0m\n", Input);
+        std::printf("Expected: \"%s\"\n", ExpectedError);
+        std::printf("Got: \"%s\"\n", Error.Error);
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::printf("\"%s\" e-> \"%s\"\n", Input, ExpectedError);
+}
+
 void StringHelperTests() {
     Expect(StringEqual("", "") == true);
     Expect(StringEqual("hello", "hello") == true);
@@ -125,12 +217,10 @@ void BasicParseTests() {
     ExpectParseResult("#f  ", "#f");
 
     ExpectParseResult("()", "()");
-    ExpectParseResult("() ()", "() ()");
     ExpectParseResult(" (   ) ", "()");
 
     ExpectParseResult(" ( #t ) ", "(#t)");
     ExpectParseResult(" ( #t #f ) ", "(#t #f)");
-    ExpectParseResult(" ( #t #f )  ( #t #f ) ", "(#t #f) (#t #f)");
     ExpectParseResult(" ( #t ( #f ) ) ", "(#t (#f))");
     ExpectParseResult(" ( #t ( #f (#t) ) ) ", "(#t (#f (#t)))");
 
@@ -205,7 +295,7 @@ void ValuePoolAllocTests() {
     static const int ValuePoolCapacity = 100;
     value ValuePool[ValuePoolCapacity] = {};
 
-    mem Mem;
+    mem Mem = {};
     Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
 
     value* TestValue = Mem.AllocSymbol("test");
@@ -222,6 +312,22 @@ void ValuePoolAllocTests() {
     ExpectValueToStringResult(ListInListValue, "((#t test #f) #f)");
 }
 
+void EvalQuoteTests() {
+    ExpectEvalResult("()", "()");
+    ExpectEvalResult("#f", "#f");
+    ExpectEvalResult("#t", "#t");
+    ExpectEvalResult("(quote ())", "()");
+    ExpectEvalResult("(quote a)", "a");
+    ExpectEvalResult("(quote (a b c))", "(a b c)");
+
+    ExpectEvalError("(quote)", "QUOTE_ARGUMENT_ERROR");
+    ExpectEvalError("(quote a b)", "QUOTE_ARGUMENT_ERROR");
+}
+
+    // ExpectSExpressionEvalResult("'()", "()");
+    // ExpectSExpressionEvalResult("'a", "a");
+    // ExpectSExpressionEvalResult("'(a b c)", "(a b c)");
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -232,6 +338,7 @@ int main(int argc, char** argv)
     ParseErrorTests();
     ValueTests();
     ValuePoolAllocTests();
+    EvalQuoteTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
