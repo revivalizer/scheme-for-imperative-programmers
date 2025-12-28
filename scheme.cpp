@@ -146,6 +146,10 @@ struct context {
     mem* Mem;
 };
 
+value* Cons(value* Car, value* Cdr, mem* Mem) {
+    return Mem->AllocPair(Car, Cdr);
+}
+
 #define PARSE_ERROR(ERROR, ROW, COL) { Error->Type = error::PARSE_ERROR; Error->Error = ERROR; Error->Row = ROW; Error->Col = COL; return 0; }
 #define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return 0; }
 
@@ -226,6 +230,10 @@ struct parser {
             } else {
                 PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
             }
+        } else if (Match('\'')) {
+            value* QuoteSymbol = Context->Mem->AllocSymbol("quote");
+            value* QuotedExpr = ParseSExpression(Context, Error); CHECK_ERROR();
+            return Cons(QuoteSymbol, Cons(QuotedExpr, &value::Nil, Context->Mem), Context->Mem);
         } else if (IsAllowableSymbolStartCharacter(C())) {
             const char* SymbolStart = Current;
             Next();

@@ -324,9 +324,12 @@ void EvalQuoteTests() {
     ExpectEvalError("(quote a b)", "QUOTE_ARGUMENT_ERROR");
 }
 
-    // ExpectSExpressionEvalResult("'()", "()");
-    // ExpectSExpressionEvalResult("'a", "a");
-    // ExpectSExpressionEvalResult("'(a b c)", "(a b c)");
+void EvalQuoteShorthandTests() {
+    ExpectParseResult("'()", "(quote ())");
+    ExpectParseResult("'a", "(quote a)");
+    ExpectParseResult("'(a b c)", "(quote (a b c))");
+    ExpectParseResult("''a", "(quote (quote a))");
+}
 
 int main(int argc, char** argv)
 {
@@ -339,6 +342,8 @@ int main(int argc, char** argv)
     ValueTests();
     ValuePoolAllocTests();
     EvalQuoteTests();
+    EvalQuoteShorthandTests();
+
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
