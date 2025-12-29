@@ -142,6 +142,7 @@ void ExpectEvalResult(const char* Input, const char* Expected) {
     context Context = {};
     Context.Mem = &Mem;
     Context.Environment = &value::Nil;
+    Context.Environment = RegisterBuiltinFunctions(Context.Environment, Context.Mem);
 
     error Error = {};
 
@@ -181,6 +182,7 @@ void ExpectEvalError(const char* Input, const char* ExpectedError) {
     context Context = {};
     Context.Mem = &Mem;
     Context.Environment = &value::Nil;
+    Context.Environment = RegisterBuiltinFunctions(Context.Environment, Context.Mem);
 
     error Error = {};
 
@@ -348,6 +350,61 @@ void ExtendableGlobalEnvironmentTests() {
     ExpectEvalError("(define test 'a) test2", "EVAL_UNDEFINED_SYMBOL");
 }
 
+void PrimitiveFunctionsTests() {
+    ExpectEvalResult("(car '(a b c))", "a");
+    ExpectEvalError("(car '(a b) '(b c))", "CAR_ARGUMENT_ERROR");
+    ExpectEvalError("(car 'a)", "CAR_NON_PAIR_ARGUMENT");
+    // NOTE: Error cases not thoroughly tested, feel free to add
+    ExpectEvalResult("(cdr '(a b c))", "(b c)");
+    ExpectEvalResult("(car (cdr '(a b c)))", "b");
+    ExpectEvalResult("(cons 'a '(b c))", "(a b c)");
+    ExpectEvalResult("(cons '(a b c) '())", "((a b c))");
+    ExpectEvalResult("(car (cons '(a b c) #f))", "(a b c)");
+
+    ExpectEvalResult("(list)", "()");
+    ExpectEvalResult("(list 'a 'b 'c)", "(a b c)");
+    ExpectEvalResult("(list (car (list 'c 'd 'e)) 'b 'a)", "(c b a)");
+
+    ExpectEvalResult("(assoc 'joan '((john smith) (joan doe) (marcia law)))", "(joan doe)");
+    ExpectEvalResult("(assoc 'john '((john smith) (joan doe) (marcia law)))", "(john smith)");
+    ExpectEvalResult("(assoc 'jean '((john smith) (joan doe) (marcia law)))", "()");
+    ExpectEvalResult("(assoc 'a '())", "()");
+    ExpectEvalResult("(assoc 'b '((c d) (e f)))", "()");
+    ExpectEvalResult("(assoc 'c '((c d) (e f)))", "(c d)");
+    ExpectEvalResult("(assoc 'e '((c d) (e f)))", "(e f)");
+
+    ExpectEvalResult("(pair? '())", "#f");
+    ExpectEvalResult("(pair? '#f)", "#f");
+    ExpectEvalResult("(pair? (cdr '(a)))", "#f");
+    ExpectEvalResult("(pair? '(a))", "#t");
+    ExpectEvalResult("(pair? '(a b))", "#t");
+    ExpectEvalResult("(pair? 'a)", "#f");
+    // TODO: Add test for dotted pair
+
+    ExpectEvalResult("(null? '())", "#t");
+    ExpectEvalResult("(null? '#f)", "#f");
+    ExpectEvalResult("(null? (cdr '(a)))", "#t");
+    ExpectEvalResult("(null? 'a)", "#f");
+    ExpectEvalResult("(null? '(a b))", "#f");
+
+    ExpectEvalResult("(symbol? 'symbol?)", "#t");
+    ExpectEvalResult("(symbol? symbol?)", "#f");
+    ExpectEvalResult("(symbol? 'a)", "#t");
+    ExpectEvalResult("(symbol? '(a b))", "#f");
+    ExpectEvalResult("(symbol? '())", "#f");
+    ExpectEvalResult("(symbol? #t)", "#f");
+
+    ExpectEvalResult("(boolean? #t)", "#t");
+    ExpectEvalResult("(boolean? #f)", "#t");
+    ExpectEvalResult("(boolean? 'true)", "#f");
+    ExpectEvalResult("(boolean? '())", "#f");
+    ExpectEvalResult("(boolean? '(#t))", "#f");
+
+    ExpectEvalResult("(procedure? procedure?)", "#t");
+    ExpectEvalResult("(procedure? 'procedure?)", "#f");
+    // TODO: Add tests for lambda
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -361,6 +418,7 @@ int main(int argc, char** argv)
     EvalQuoteTests();
     EvalQuoteShorthandTests();
     ExtendableGlobalEnvironmentTests();
+    PrimitiveFunctionsTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
