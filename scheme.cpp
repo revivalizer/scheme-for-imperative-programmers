@@ -72,7 +72,7 @@ struct value {
         BOOLEAN,
         SYMBOL,
         PAIR,
-        PRIMITIVE_FUNCTION,
+        PRIMITIVE_PROCEDURE,
     };
 
     struct pair {
@@ -86,7 +86,7 @@ struct value {
         bool Boolean;
         const char* Symbol;
         pair Pair;
-        primitive_func_ptr PrimitiveFunction;
+        primitive_func_ptr PrimitiveProcedure;
     };
 
     static value Nil;
@@ -147,9 +147,9 @@ struct mem {
         return Symbol;
     }
 
-    value* AllocPrimitiveFunction(primitive_func_ptr Func) {
-        value* Cell = AllocCell(value::PRIMITIVE_FUNCTION);
-        Cell->PrimitiveFunction = Func;
+    value* AllocPrimitiveProcedure(primitive_func_ptr Proc) {
+        value* Cell = AllocCell(value::PRIMITIVE_PROCEDURE);
+        Cell->PrimitiveProcedure = Proc;
         return Cell;
     }
 };
@@ -290,8 +290,8 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
             }
             StringBuilder->Char(')');
         } break;
-        case value::PRIMITIVE_FUNCTION: {
-            StringBuilder->String("#<primitive-function>");
+        case value::PRIMITIVE_PROCEDURE: {
+            StringBuilder->String("#<primitive-procedure>");
         } break;
     }
 }
@@ -355,7 +355,7 @@ struct eval {
     }
 
     static bool ProcedureQ(value* Value) {
-        return Value->Type == value::PRIMITIVE_FUNCTION;
+        return Value->Type == value::PRIMITIVE_PROCEDURE;
     }
 
     static bool EqualQ(value* A, value* B) {
@@ -365,7 +365,7 @@ struct eval {
             case value::BOOLEAN: return A->Boolean == B->Boolean;
             case value::SYMBOL: return StringEqual(A->Symbol, B->Symbol);
             case value::PAIR: return EqualQ(Car(A), Car(B)) && EqualQ(Cdr(A), Cdr(B));
-            case value::PRIMITIVE_FUNCTION: return A->PrimitiveFunction == B->PrimitiveFunction;
+            case value::PRIMITIVE_PROCEDURE: return A->PrimitiveProcedure == B->PrimitiveProcedure;
             default: return false;
         }
     }
@@ -398,8 +398,8 @@ struct eval {
     }
 
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
-        if (Operator->Type == value::PRIMITIVE_FUNCTION) {
-            return Operator->PrimitiveFunction(Operands, Context, Error);
+        if (Operator->Type == value::PRIMITIVE_PROCEDURE) {
+            return Operator->PrimitiveProcedure(Operands, Context, Error);
         }
         EVAL_ERROR("EVAL_ERROR_NOT_A_PROCEDURE");
     }
@@ -524,23 +524,23 @@ struct eval {
     }
 };
 
-value* ExtendEnvironmentWithPrimitiveFunction(value* Environment, const char* Name, primitive_func_ptr Func, mem* Mem) {
+value* ExtendEnvironmentWithPrimitiveProcedure(value* Environment, const char* Name, primitive_func_ptr Proc, mem* Mem) {
     value* Symbol = Mem->AllocSymbol(Name);
-    value* Entry = Cons(Symbol, Mem->AllocPrimitiveFunction(Func), Mem);
+    value* Entry = Cons(Symbol, Mem->AllocPrimitiveProcedure(Proc), Mem);
     return Cons(Entry, Environment, Mem);
 }
 
 value* RegisterBuiltinFunctions(value* Environment, mem* Mem) {
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "car", &eval::CarFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "cdr", &eval::CdrFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "cons", &eval::ConsFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "list", &eval::ListFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "assoc", &eval::AssocFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "pair?", &eval::PairQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "null?", &eval::NullQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "symbol?", &eval::SymbolQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "boolean?", &eval::BooleanQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "procedure?", &eval::ProcedureQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveFunction(Environment, "equal?", &eval::EqualQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "car", &eval::CarFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "cdr", &eval::CdrFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "cons", &eval::ConsFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "list", &eval::ListFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "assoc", &eval::AssocFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "pair?", &eval::PairQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "null?", &eval::NullQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "symbol?", &eval::SymbolQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "boolean?", &eval::BooleanQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "procedure?", &eval::ProcedureQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "equal?", &eval::EqualQFunc, Mem);
     return Environment;
 }

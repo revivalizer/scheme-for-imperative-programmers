@@ -350,7 +350,7 @@ void ExtendableGlobalEnvironmentTests() {
     ExpectEvalError("(define test 'a) test2", "EVAL_UNDEFINED_SYMBOL");
 }
 
-void PrimitiveFunctionsTests() {
+void PrimitiveProcedureTests() {
     ExpectEvalResult("(car '(a b c))", "a");
     ExpectEvalError("(car '(a b) '(b c))", "CAR_ARGUMENT_ERROR");
     ExpectEvalError("(car 'a)", "CAR_NON_PAIR_ARGUMENT");
@@ -418,7 +418,7 @@ int main(int argc, char** argv)
     EvalQuoteTests();
     EvalQuoteShorthandTests();
     ExtendableGlobalEnvironmentTests();
-    PrimitiveFunctionsTests();
+    PrimitiveProcedureTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
