@@ -60,6 +60,7 @@ struct error {
     type Type;
     const char* Error;
     int Row, Col;
+    const char* Ex;
 };
 
 struct value {
@@ -144,6 +145,7 @@ struct mem {
 
 struct context {
     mem* Mem;
+    value* Environment;
 };
 
 value* Cons(value* Car, value* Cdr, mem* Mem) {
@@ -282,6 +284,7 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
 
 #define EVAL_ERROR(ERROR) { Error->Type = error::EVAL_ERROR; Error->Error = ERROR; return 0; }
 #define EVAL_ASSERT(CONDITION, ERROR) { if (!(CONDITION)) { EVAL_ERROR(ERROR); } }
+#define EVAL_ASSERT_EX(CONDITION, ERROR, EX) { if (!(CONDITION)) { Error->Ex = EX; EVAL_ERROR(ERROR); } }
 
 int ListLength(value* List) {
     int Length = 0;
@@ -292,25 +295,79 @@ int ListLength(value* List) {
     return Length;
 }
 
+value* Car(value* Value) {
+    return Value->Pair.Car;
+}
+
+value* Cdr(value* Value) {
+    return Value->Pair.Cdr;
+}
+
+bool NullQ(value* Value) {
+    return Value->Type == value::NIL;
+}
+
+bool NotNullQ(value* Value) {
+    return !NullQ(Value);
+}
+
+bool PairQ(value* Value) {
+    return Value->Type == value::PAIR;
+}
+
+static value* Assoc(value* Needle, value* Haystack, error* Error) {
+    // TODO: Could assert that Needle and Pair keys are symbols
+    if (NullQ(Haystack)) {
+        return &value::Nil;
+    }
+
+    value* Pair = Car(Haystack);
+    EVAL_ASSERT(PairQ(Pair), "EVAL_ERROR_ASSOC_NON_PAIR_IN_HAYSTACK");
+
+    value* Key = Car(Pair);
+    if (StringEqual(Needle->Symbol, Key->Symbol)) {
+        return Pair;
+    }
+
+    return Assoc(Needle, Cdr(Haystack), Error); // Don't need to check error here, since we are returning anyway
+}
+
 struct eval {
+    static value* EvalDefine(value* Operands, context* Context, error* Error) {
+        EVAL_ASSERT(ListLength(Operands) == 2, "DEFINE_ARGUMENT_ERROR");
+        value* Symbol = Car(Operands);
+        value* Value = Eval(Car(Cdr(Operands)), Context, Error); CHECK_ERROR();
+        value* Entry = Cons(Symbol, Value, Context->Mem);
+        Context->Environment = Cons(Entry, Context->Environment, Context->Mem);
+        return Symbol;
+    }
+
     static value* Eval(value* Expr, context* Context, error* Error) {
         (void)Context;
         switch (Expr->Type) {
             case value::NIL:
             case value::BOOLEAN:
-            case value::SYMBOL:
                 {
                     return Expr;
                 } break;
 
+            case value::SYMBOL:
+                {
+                    value* EnvCell = Assoc(Expr, Context->Environment, Error); CHECK_ERROR();
+                    EVAL_ASSERT_EX(NotNullQ(EnvCell), "EVAL_UNDEFINED_SYMBOL", Expr->Symbol);
+                    return Cdr(EnvCell);
+                } break;
+
             case value::PAIR: {
-                value* UnevaluatedOperator = Expr->Pair.Car;
-                value* Arguments = Expr->Pair.Cdr;
+                value* UnevaluatedOperator = Car(Expr);
+                value* Operands = Cdr(Expr);
 
                 if (UnevaluatedOperator->Type == value::SYMBOL) {
                     if (StringEqual(UnevaluatedOperator->Symbol, "quote")) {
-                        EVAL_ASSERT(ListLength(Arguments) == 1, "QUOTE_ARGUMENT_ERROR");
-                        return Arguments->Pair.Car;
+                        EVAL_ASSERT(ListLength(Operands) == 1, "QUOTE_ARGUMENT_ERROR");
+                        return Car(Operands);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "define")) {
+                        return EvalDefine(Operands, Context, Error);
                     }
                 }
             }
@@ -319,5 +376,15 @@ struct eval {
                 EVAL_ERROR("UNHANDLED_EXPRESSION_TYPE");
             }
         }
+    }
+
+    static value* EvalSequence(value* Expr, context* Context, error* Error) {
+        value* LastResult = &value::Nil;
+
+        while (Expr->Type == value::PAIR) {
+            LastResult = Eval(Car(Expr), Context, Error); CHECK_ERROR();
+            Expr = Cdr(Expr);
+        }
+        return LastResult;
     }
 };

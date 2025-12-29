@@ -41,6 +41,7 @@ void ExpectParseResult(const char* Input, const char* Expected)
     Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
     context Context = {};
     Context.Mem = &Mem;
+    Context.Environment = &value::Nil;
 
     error Error = {};
 
@@ -79,6 +80,7 @@ void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int 
     Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
     context Context = {};
     Context.Mem = &Mem;
+    Context.Environment = &value::Nil;
 
     error Error = {};
 
@@ -124,6 +126,9 @@ void ExpectValueToStringResult(value* Value, const char* Expected) {
 void HandleEvalError(const char* Input, error* Error) {
     if (Error->Type == error::EVAL_ERROR) {
         std::printf("\033[31mEval error for input \"%s\": \"%s\"\033[0m\n", Input, Error->Error);
+        if (StringEqual(Error->Error, "EVAL_UNDEFINED_SYMBOL")) {
+            std::printf("Undefined symbol: \"%s\"\n", Error->Ex);
+        }
         std::exit(EXIT_FAILURE);
     }
 }
@@ -136,15 +141,16 @@ void ExpectEvalResult(const char* Input, const char* Expected) {
     Mem.Init(ValuePool, ValuePoolCapacity, malloc);
     context Context = {};
     Context.Mem = &Mem;
+    Context.Environment = &value::Nil;
 
     error Error = {};
 
     parser Parser;
     Parser.Init(Input);
-    value* ParseResult = Parser.ParseSExpression(&Context, &Error);
+    value* ParseResult = Parser.ParseSExpressionSequenceUntil('\0', &Context, &Error);
     HandleParseError(Input, &Error);
 
-    value* EvalResult = eval::Eval(ParseResult, &Context, &Error);
+    value* EvalResult = eval::EvalSequence(ParseResult, &Context, &Error);
     HandleEvalError(Input, &Error);
 
     char Buffer[1024];
@@ -174,15 +180,16 @@ void ExpectEvalError(const char* Input, const char* ExpectedError) {
     Mem.Init(ValuePool, ValuePoolCapacity, malloc);
     context Context = {};
     Context.Mem = &Mem;
+    Context.Environment = &value::Nil;
 
     error Error = {};
 
     parser Parser;
     Parser.Init(Input);
-    value* ParseResult = Parser.ParseSExpression(&Context, &Error);
+    value* ParseResult = Parser.ParseSExpressionSequenceUntil('\0', &Context, &Error);
     HandleParseError(Input, &Error);
 
-    eval::Eval(ParseResult, &Context, &Error);
+    eval::EvalSequence(ParseResult, &Context, &Error);
 
     if (Error.Type != error::EVAL_ERROR) {
         std::printf("\033[31mExpected eval error but got none for input: \"%s\"\033[0m\n", Input);
@@ -331,6 +338,16 @@ void EvalQuoteShorthandTests() {
     ExpectParseResult("''a", "(quote (quote a))");
 }
 
+void ExtendableGlobalEnvironmentTests() {
+    ExpectEvalResult("#t #f", "#f");
+
+    ExpectEvalResult("(define test 'a) test", "a");
+    ExpectEvalResult("(define test 'a) (define test2 'b) test", "a");
+    ExpectEvalResult("(define test 'a) (define test2 'b) test2", "b");
+
+    ExpectEvalError("(define test 'a) test2", "EVAL_UNDEFINED_SYMBOL");
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -343,7 +360,7 @@ int main(int argc, char** argv)
     ValuePoolAllocTests();
     EvalQuoteTests();
     EvalQuoteShorthandTests();
-
+    ExtendableGlobalEnvironmentTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
