@@ -70,6 +70,7 @@ struct value {
     enum type {
         NIL,
         BOOLEAN,
+        NUMBER,
         SYMBOL,
         PAIR,
         PRIMITIVE_PROCEDURE,
@@ -84,6 +85,7 @@ struct value {
     type Type;
     union {
         bool Boolean;
+        int64_t Number;
         const char* Symbol;
         pair Pair;
         primitive_func_ptr PrimitiveProcedure;
@@ -111,7 +113,7 @@ struct mem {
         AllocFunc = Alloc;
     }
 
-    value* AllocCell(value::type Type = value::NIL) {
+    value* AllocValue(value::type Type = value::NIL) {
         for (int i=0; i<ValueCapacity; i++) {
             if (ValuePool[i].IsAlive == false) {
                 ValuePool[i] = {};
@@ -125,14 +127,20 @@ struct mem {
     }
 
     value* AllocPair(value* Car, value* Cdr) {
-        value* Cell = AllocCell(value::PAIR);
-        Cell->Pair.Car = Car;
-        Cell->Pair.Cdr = Cdr;
-        return Cell;
+        value* Value = AllocValue(value::PAIR);
+        Value->Pair.Car = Car;
+        Value->Pair.Cdr = Cdr;
+        return Value;
     }
 
     value* AllocSymbol(const char* ZeroTerminatedSymbol) {
         return AllocSymbol(ZeroTerminatedSymbol, ZeroTerminatedSymbol + StringLength(ZeroTerminatedSymbol));
+    }
+
+    value* AllocNumber(int64_t Number) {
+        value* Value = AllocValue(value::NUMBER);
+        Value->Number = Number;
+        return Value;
     }
 
     value* AllocSymbol(const char* SymbolStart, const char* SymbolEnd) {
@@ -142,15 +150,15 @@ struct mem {
             Buffer[i] = SymbolStart[i];
         }
         Buffer[Length] = '\0';
-        value* Symbol = AllocCell(value::SYMBOL);
-        Symbol->Symbol = Buffer;
-        return Symbol;
+        value* Value = AllocValue(value::SYMBOL);
+        Value->Symbol = Buffer;
+        return Value;
     }
 
     value* AllocPrimitiveProcedure(primitive_func_ptr Proc) {
-        value* Cell = AllocCell(value::PRIMITIVE_PROCEDURE);
-        Cell->PrimitiveProcedure = Proc;
-        return Cell;
+        value* Value = AllocValue(value::PRIMITIVE_PROCEDURE);
+        Value->PrimitiveProcedure = Proc;
+        return Value;
     }
 };
 
@@ -180,6 +188,10 @@ struct parser {
         return Current[0];
     }
 
+    char NextC() {
+        return Current[1];
+    }
+
     void Next() {
         Current++;
         Col++;
@@ -191,6 +203,10 @@ struct parser {
             return true;
         }
         return false;
+    }
+
+    static bool IsDigit(char C) {
+        return C >= '0' && C <= '9';
     }
 
     static bool IsWhitespace(char C) {
@@ -243,6 +259,17 @@ struct parser {
             } else {
                 PARSE_ERROR("UNEXPECTED_CHARACTER", Row, Col);
             }
+        } else if (IsDigit(C()) || (C() == '-' && IsDigit(NextC()))) {
+            bool IsNegative = Match('-');
+            int64_t Number = 0;
+            while (IsDigit(C())) {
+                Number = Number * 10 + (C() - '0');
+                Next();
+            }
+            if (IsNegative) {
+                Number = -Number;
+            }
+            return Context->Mem->AllocNumber(Number);
         } else if (Match('\'')) {
             value* QuoteSymbol = Context->Mem->AllocSymbol("quote");
             value* QuotedExpr = ParseSExpression(Context, Error); CHECK_ERROR();
@@ -270,6 +297,32 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
                 StringBuilder->String("#t");
             } else {
                 StringBuilder->String("#f");
+            }
+        } break;
+        case value::NUMBER: {
+            int64_t Number = Value->Number;
+
+            if (Number < 0) {
+                StringBuilder->Char('-');
+                Number = -Number;
+            }
+
+            if (Number == 0) {
+                StringBuilder->Char('0');
+                return;
+            }
+
+            char Chars[15];
+            int NumChars = 0;
+
+            while (Number > 0) {
+                char Digit = (char)(Number % 10);
+                Chars[NumChars++] = '0' + Digit;
+                Number /= 10;
+            }
+
+            for (int i = NumChars - 1; i >= 0; i--) {
+                StringBuilder->Char(Chars[i]);
             }
         } break;
         case value::SYMBOL: {
@@ -354,6 +407,10 @@ struct eval {
         return Value->Type == value::BOOLEAN;
     }
 
+    static bool NumberQ(value* Value) {
+        return Value->Type == value::NUMBER;
+    }
+
     static bool ProcedureQ(value* Value) {
         return Value->Type == value::PRIMITIVE_PROCEDURE;
     }
@@ -363,15 +420,14 @@ struct eval {
         switch (A->Type) {
             case value::NIL: return true;
             case value::BOOLEAN: return A->Boolean == B->Boolean;
+            case value::NUMBER: return A->Number == B->Number;
             case value::SYMBOL: return StringEqual(A->Symbol, B->Symbol);
             case value::PAIR: return EqualQ(Car(A), Car(B)) && EqualQ(Cdr(A), Cdr(B));
             case value::PRIMITIVE_PROCEDURE: return A->PrimitiveProcedure == B->PrimitiveProcedure;
-            default: return false;
         }
     }
 
     static value* Assoc(value* Needle, value* Haystack, error* Error) {
-        // TODO: Could assert that Needle and Pair keys are symbols
         if (NullQ(Haystack)) {
             return &value::Nil;
         }
@@ -380,11 +436,11 @@ struct eval {
         EVAL_ASSERT(PairQ(Pair), "EVAL_ERROR_ASSOC_NON_PAIR_IN_HAYSTACK");
 
         value* Key = Car(Pair);
-        if (StringEqual(Needle->Symbol, Key->Symbol)) {
+        if (EqualQ(Needle, Key)) {
             return Pair;
         }
 
-        return Assoc(Needle, Cdr(Haystack), Error); // Don't need to check error here, since we are returning anyway
+        return Assoc(Needle, Cdr(Haystack), Error);
     }
 
 
@@ -409,6 +465,8 @@ struct eval {
         switch (Expr->Type) {
             case value::NIL:
             case value::BOOLEAN:
+            case value::NUMBER:
+            case value::PRIMITIVE_PROCEDURE:
                 {
                     return Expr;
                 } break;
@@ -437,10 +495,6 @@ struct eval {
                 value* EvaluatedOperands = EvalList(Operands, Context, Error); CHECK_ERROR();
 
                 return Apply(EvaluatedOperator, EvaluatedOperands, Context, Error);
-            }
-
-            default: {
-                EVAL_ERROR("UNHANDLED_EXPRESSION_TYPE");
             }
         }
     }
@@ -511,6 +565,12 @@ struct eval {
         return BooleanQ(Car(Arguments)) ? &value::True : &value::False;
     }
 
+    static value* NumberQFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context; (void)Error;
+        EVAL_ASSERT(ListLength(Arguments) == 1, "NUMBER?_ARGUMENT_ERROR");
+        return NumberQ(Car(Arguments)) ? &value::True : &value::False;
+    }
+
     static value* ProcedureQFunc(value* Arguments, context* Context, error* Error) {
         (void)Context; (void)Error;
         EVAL_ASSERT(ListLength(Arguments) == 1, "PROCEDURE?_ARGUMENT_ERROR");
@@ -521,6 +581,79 @@ struct eval {
         (void)Context; (void)Error;
         EVAL_ASSERT(ListLength(Arguments) == 2, "EQUAL?_ARGUMENT_ERROR");
         return EqualQ(Car(Arguments), Cadr(Arguments)) ? &value::True : &value::False;
+    }
+
+    static value* AddFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context;
+        int64_t Sum = 0;
+        while (Arguments->Type == value::PAIR) {
+            EVAL_ASSERT(NumberQ(Car(Arguments)), "ADD_NON_NUMBER_ARGUMENT");
+            Sum += Car(Arguments)->Number;
+            Arguments = Cdr(Arguments);
+        }
+        return Context->Mem->AllocNumber(Sum);
+    }
+
+    static value* SubFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context;
+        EVAL_ASSERT(NotNullQ(Arguments), "SUB_ARGUMENT_ERROR");
+        EVAL_ASSERT(NumberQ(Car(Arguments)), "SUB_NON_NUMBER_ARGUMENT");
+        int64_t Result = Car(Arguments)->Number;
+        Arguments = Cdr(Arguments);
+        if (Arguments->Type == value::NIL) {
+            Result = -Result;
+        } else {
+            while (Arguments->Type == value::PAIR) {
+                EVAL_ASSERT(NumberQ(Car(Arguments)), "SUB_NON_NUMBER_ARGUMENT");
+                Result -= Car(Arguments)->Number;
+                Arguments = Cdr(Arguments);
+            }
+        }
+        return Context->Mem->AllocNumber(Result);
+    }
+
+    static value* MulFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context;
+        int64_t Product = 1;
+        while (Arguments->Type == value::PAIR) {
+            EVAL_ASSERT(NumberQ(Car(Arguments)), "MUL_NON_NUMBER_ARGUMENT");
+            Product *= Car(Arguments)->Number;
+            Arguments = Cdr(Arguments);
+        }
+        return Context->Mem->AllocNumber(Product);
+    }
+
+    static value* DivFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context;
+        EVAL_ASSERT(NotNullQ(Arguments), "DIV_ARGUMENT_ERROR");
+        EVAL_ASSERT(NumberQ(Car(Arguments)), "DIV_NON_NUMBER_ARGUMENT");
+        int64_t Result = Car(Arguments)->Number;
+        Arguments = Cdr(Arguments);
+        EVAL_ASSERT(NotNullQ(Arguments), "DIV_ARGUMENT_ERROR");
+        while (Arguments->Type == value::PAIR) {
+            EVAL_ASSERT(NumberQ(Car(Arguments)), "DIV_NON_NUMBER_ARGUMENT");
+            int64_t Divisor = Car(Arguments)->Number;
+            EVAL_ASSERT(Divisor != 0, "DIVISION_BY_ZERO");
+            Result /= Divisor;
+            Arguments = Cdr(Arguments);
+        }
+        return Context->Mem->AllocNumber(Result);
+    }
+
+    static value* LessThanFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context;
+        EVAL_ASSERT(ListLength(Arguments) == 2, "LESS_THAN_ARGUMENT_ERROR");
+        EVAL_ASSERT(NumberQ(Car(Arguments)), "LESS_THAN_NON_NUMBER_ARGUMENT");
+        EVAL_ASSERT(NumberQ(Cadr(Arguments)), "LESS_THAN_NON_NUMBER_ARGUMENT");
+        return (Car(Arguments)->Number < Cadr(Arguments)->Number) ? &value::True : &value::False;
+    }
+
+    static value* EqualsFunc(value* Arguments, context* Context, error* Error) {
+        (void)Context;
+        EVAL_ASSERT(ListLength(Arguments) == 2, "EQUALS_ARGUMENT_ERROR");
+        EVAL_ASSERT(NumberQ(Car(Arguments)), "EQUALS_NON_NUMBER_ARGUMENT");
+        EVAL_ASSERT(NumberQ(Cadr(Arguments)), "EQUALS_NON_NUMBER_ARGUMENT");
+        return (Car(Arguments)->Number == Cadr(Arguments)->Number) ? &value::True : &value::False;
     }
 };
 
@@ -540,7 +673,15 @@ value* RegisterBuiltinFunctions(value* Environment, mem* Mem) {
     Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "null?", &eval::NullQFunc, Mem);
     Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "symbol?", &eval::SymbolQFunc, Mem);
     Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "boolean?", &eval::BooleanQFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "number?", &eval::NumberQFunc, Mem);
     Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "procedure?", &eval::ProcedureQFunc, Mem);
     Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "equal?", &eval::EqualQFunc, Mem);
+
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "+", &eval::AddFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "-", &eval::SubFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "*", &eval::MulFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "/", &eval::DivFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "<", &eval::LessThanFunc, Mem);
+    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "=", &eval::EqualsFunc, Mem);
     return Environment;
 }

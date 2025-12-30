@@ -34,7 +34,7 @@ void HandleParseError(const char* Input, error* Error)
 
 void ExpectParseResult(const char* Input, const char* Expected)
 {
-    static const int ValuePoolCapacity = 100;
+    static const int ValuePoolCapacity = 200;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
@@ -73,7 +73,7 @@ void ExpectParseResult(const char* Input, const char* Expected)
 
 void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int Col)
 {
-    static const int ValuePoolCapacity = 100;
+    static const int ValuePoolCapacity = 200;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
@@ -134,7 +134,7 @@ void HandleEvalError(const char* Input, error* Error) {
 }
 
 void ExpectEvalResult(const char* Input, const char* Expected) {
-    static const int ValuePoolCapacity = 100;
+    static const int ValuePoolCapacity = 200;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
@@ -174,7 +174,7 @@ void ExpectEvalResult(const char* Input, const char* Expected) {
 }
 
 void ExpectEvalError(const char* Input, const char* ExpectedError) {
-    static const int ValuePoolCapacity = 100;
+    static const int ValuePoolCapacity = 200;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
@@ -301,7 +301,7 @@ void ValueTests() {
 }
 
 void ValuePoolAllocTests() {
-    static const int ValuePoolCapacity = 100;
+    static const int ValuePoolCapacity = 200;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
@@ -406,6 +406,69 @@ void PrimitiveProcedureTests() {
     // TODO: Add tests for lambda later
 }
 
+void NumberTests() {
+    ExpectParseResult("1", "1");
+    ExpectParseResult("123", "123");
+    ExpectParseResult("-12", "-12");
+    ExpectParseResult("-0", "0");
+    ExpectParseResult("(-4 2)", "(-4 2)");
+    ExpectParseResult("(- 4 2)", "(- 4 2)");
+    ExpectParseResult("100", "100");
+
+    ExpectEvalResult("23", "23");
+
+    ExpectEvalResult("(number? 2)", "#t");
+    ExpectEvalResult("(number? 'a)", "#f");
+    ExpectEvalResult("(number? #f)", "#f");
+
+    ExpectEvalResult("(list 1 2 3)", "(1 2 3)");
+    ExpectEvalResult("(assoc 971 '((442 smith) (971 doe) (887 law)))", "(971 doe)"); // Hint: Use equals to compare keys 
+    ExpectEvalResult("(equal? 3 (+ 2 1))", "#t");
+    ExpectEvalResult("(equal? 3 -8)", "#f");
+
+    ExpectEvalResult("(+)", "0");
+    ExpectEvalError("(+3)", "EVAL_UNDEFINED_SYMBOL"); // NOTE: +3 turns into a symbol, as opposed to -3 which turns into a number
+    ExpectEvalResult("(+ 3)", "3");
+    ExpectEvalResult("(+ 3 4 5)", "12");
+    ExpectEvalResult("(+ 3 (+ 4 8) 5)", "20");
+
+    ExpectEvalError("(-)", "SUB_ARGUMENT_ERROR");
+    ExpectEvalError("(-1)", "EVAL_ERROR_NOT_A_PROCEDURE");
+    ExpectEvalResult("(- 3)", "-3");
+    ExpectEvalResult("(- 10 4)", "6");
+    ExpectEvalResult("(- 10 4 1)", "5");
+
+    ExpectEvalResult("(*)", "1");
+    ExpectEvalResult("(* 3)", "3");
+    ExpectEvalResult("(* 3 4 5)", "60");
+    ExpectEvalResult("(* 3 (* 4 8) 5)", "480");
+
+    ExpectEvalError("(/)", "DIV_ARGUMENT_ERROR");
+    ExpectEvalError("(/ 2)", "DIV_ARGUMENT_ERROR");
+    // NOTE: If you have floats, you may want to do this instead
+    // ExpectEvalResult("(/ 1)", "1");
+    // ExpectEvalResult("(/ 2)", "0.5");
+    ExpectEvalResult("(/ 18 9)", "2");
+    ExpectEvalResult("(/ 60 (/ 4 2) 5)", "6");
+    ExpectEvalResult("(/ -5 1)", "-5");
+    ExpectEvalError("(/ 1 0)", "DIVISION_BY_ZERO");
+
+    ExpectEvalError("(<)", "LESS_THAN_ARGUMENT_ERROR");
+    ExpectEvalError("(< 1)", "LESS_THAN_ARGUMENT_ERROR");
+    ExpectEvalError("(< 1 2 3)", "LESS_THAN_ARGUMENT_ERROR");
+    ExpectEvalError("(< 'a 'b)", "LESS_THAN_NON_NUMBER_ARGUMENT");
+    ExpectEvalResult("(< 0 1)", "#t");
+    ExpectEvalResult("(< 0 -1)", "#f");
+    ExpectEvalResult("(< 10 10)", "#f");
+
+    ExpectEvalError("(=)", "EQUALS_ARGUMENT_ERROR");
+    ExpectEvalError("(= 1)", "EQUALS_ARGUMENT_ERROR");
+    ExpectEvalError("(= 1 2 3)", "EQUALS_ARGUMENT_ERROR");
+    ExpectEvalError("(= 'a 'b)", "EQUALS_NON_NUMBER_ARGUMENT");
+    ExpectEvalResult("(= 0 1)", "#f");
+    ExpectEvalResult("(= 3 3)", "#t");
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -420,6 +483,7 @@ int main(int argc, char** argv)
     EvalQuoteShorthandTests();
     ExtendableGlobalEnvironmentTests();
     PrimitiveProcedureTests();
+    NumberTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
