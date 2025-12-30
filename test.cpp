@@ -469,6 +469,19 @@ void NumberTests() {
     ExpectEvalResult("(= 3 3)", "#t");
 }
 
+void IfAndBeginTests() {
+    ExpectEvalResult("(if #t 'yes 'no)", "yes");
+    ExpectEvalResult("(if #f 'yes 'no)", "no");
+    ExpectEvalResult("(if #t 'ok (car '()))", "ok"); // This would error if evaluated
+    ExpectEvalResult("(if #f (car '()) 'ok)", "ok");
+    ExpectEvalResult("(if (boolean? #t) 'yes 'no)", "yes");
+    ExpectEvalError("(if)", "IF_ARGUMENT_ERROR");
+    ExpectEvalResult("(begin 'a)", "a");
+    ExpectEvalResult("(begin 'a 'b)", "b");
+    ExpectEvalResult("(begin 'a (begin 'b 'c) 'd)", "d");
+    ExpectEvalResult("(if #t (begin 'a 'b) 'no)", "b");
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -484,6 +497,7 @@ int main(int argc, char** argv)
     ExtendableGlobalEnvironmentTests();
     PrimitiveProcedureTests();
     NumberTests();
+    IfAndBeginTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

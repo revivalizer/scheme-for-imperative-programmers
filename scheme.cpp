@@ -366,6 +366,10 @@ struct eval {
         return Car(Cdr(Value));
     }
 
+    static value* Caddr(value* Value) {
+        return Car(Cdr(Cdr(Value)));
+    }
+
     static int ListLength(value* List) {
         int Length = 0;
         while (List->Type == value::PAIR) {
@@ -415,6 +419,14 @@ struct eval {
         return Value->Type == value::PRIMITIVE_PROCEDURE;
     }
 
+    static bool FalseQ(value* Value) {
+        return Value->Type == value::BOOLEAN && Value->Boolean == false;
+    }
+
+    static bool TrueQ(value* Value) {
+        return !FalseQ(Value);
+    }
+
     static bool EqualQ(value* A, value* B) {
         if (A->Type != B->Type) return false;
         switch (A->Type) {
@@ -443,7 +455,6 @@ struct eval {
         return Assoc(Needle, Cdr(Haystack), Error);
     }
 
-
     static value* EvalDefine(value* Operands, context* Context, error* Error) {
         EVAL_ASSERT(ListLength(Operands) == 2, "DEFINE_ARGUMENT_ERROR");
         value* Symbol = Car(Operands);
@@ -451,6 +462,16 @@ struct eval {
         value* Entry = Cons(Symbol, Value, Context->Mem);
         Context->Environment = Cons(Entry, Context->Environment, Context->Mem);
         return Symbol;
+    }
+
+    static value* EvalIf(value* Operands, context* Context, error* Error) {
+        EVAL_ASSERT(ListLength(Operands) == 3, "IF_ARGUMENT_ERROR");
+        value* Test = Car(Operands);
+        value* Consequent = Cadr(Operands);
+        value* Alternative = Caddr(Operands);
+
+        value* TestResult = Eval(Test, Context, Error); CHECK_ERROR();
+        return TrueQ(TestResult) ? Eval(Consequent, Context, Error) : Eval(Alternative, Context, Error);
     }
 
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
@@ -488,6 +509,10 @@ struct eval {
                         return Car(Operands);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "define")) {
                         return EvalDefine(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "if")) {
+                        return EvalIf(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "begin")) {
+                        return EvalSequence(Operands, Context, Error);
                     }
                 }
 
