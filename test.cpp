@@ -354,7 +354,7 @@ void PrimitiveProcedureTests() {
     ExpectEvalResult("(car '(a b c))", "a");
     ExpectEvalError("(car '(a b) '(b c))", "CAR_ARGUMENT_ERROR");
     ExpectEvalError("(car 'a)", "CAR_NON_PAIR_ARGUMENT");
-    // NOTE: Error cases not thoroughly tested, feel free to add
+    // NOTE: Error cases not exhaustively tested, feel free to add
     ExpectEvalResult("(cdr '(a b c))", "(b c)");
     ExpectEvalResult("(car (cdr '(a b c)))", "b");
     ExpectEvalResult("(cons 'a '(b c))", "(a b c)");
@@ -379,7 +379,7 @@ void PrimitiveProcedureTests() {
     ExpectEvalResult("(pair? '(a))", "#t");
     ExpectEvalResult("(pair? '(a b))", "#t");
     ExpectEvalResult("(pair? 'a)", "#f");
-    // TODO: Add test for dotted pair
+    // TODO: Add test for dotted pair later
 
     ExpectEvalResult("(null? '())", "#t");
     ExpectEvalResult("(null? '#f)", "#f");
@@ -400,9 +400,10 @@ void PrimitiveProcedureTests() {
     ExpectEvalResult("(boolean? '())", "#f");
     ExpectEvalResult("(boolean? '(#t))", "#f");
 
+    ExpectEvalResult("(procedure? cons)", "#t");
     ExpectEvalResult("(procedure? procedure?)", "#t");
     ExpectEvalResult("(procedure? 'procedure?)", "#f");
-    // TODO: Add tests for lambda
+    // TODO: Add tests for lambda later
 }
 
 int main(int argc, char** argv)
