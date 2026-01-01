@@ -474,6 +474,29 @@ struct eval {
         return TrueQ(TestResult) ? Eval(Consequent, Context, Error) : Eval(Alternative, Context, Error);
     }
 
+    static value* EvalAnd(value* Operands, context* Context, error* Error) {
+        value* Result = &value::True;
+        while (Operands->Type == value::PAIR) {
+            Result = Eval(Car(Operands), Context, Error); CHECK_ERROR();
+            if (FalseQ(Result)) {
+                return &value::False;
+            }
+            Operands = Cdr(Operands);
+        }
+        return Result;
+    }
+
+    static value* EvalOr(value* Operands, context* Context, error* Error) {
+        while (Operands->Type == value::PAIR) {
+            value* Result = Eval(Car(Operands), Context, Error); CHECK_ERROR();
+            if (TrueQ(Result)) {
+                return Result;
+            }
+            Operands = Cdr(Operands);
+        }
+        return &value::False;
+    }
+
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
         if (Operator->Type == value::PRIMITIVE_PROCEDURE) {
             return Operator->PrimitiveProcedure(Operands, Context, Error);
@@ -513,6 +536,10 @@ struct eval {
                         return EvalIf(Operands, Context, Error);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "begin")) {
                         return EvalSequence(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "and")) {
+                        return EvalAnd(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "or")) {
+                        return EvalOr(Operands, Context, Error);
                     }
                 }
 

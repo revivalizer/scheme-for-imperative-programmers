@@ -482,6 +482,18 @@ void IfAndBeginTests() {
     ExpectEvalResult("(if #t (begin 'a 'b) 'no)", "b");
 }
 
+void AndOrTests() {
+    ExpectEvalResult("(and)", "#t");
+    ExpectEvalResult("(and 1 2 3)", "3");
+    ExpectEvalResult("(and #t 'hello)", "hello");
+    ExpectEvalResult("(and #t #f (car '()) 7)", "#f");
+
+    ExpectEvalResult("(or)", "#f");
+    ExpectEvalResult("(or #f 10 (car '()))", "10");
+    ExpectEvalResult("(or #f #f 'x)", "x");
+    ExpectEvalResult("(or #f #f #f)", "#f");
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -498,6 +510,7 @@ int main(int argc, char** argv)
     PrimitiveProcedureTests();
     NumberTests();
     IfAndBeginTests();
+    AndOrTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
