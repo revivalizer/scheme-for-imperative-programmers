@@ -548,28 +548,51 @@ void LetSetTests() {
     // ExpectEvalError("(set! + 1)", "SET!_ILLEGAL_TARGET"); // Registered function
 }
 
-    // ExpectSExpressionEvalResult( "(let ((add2 (lambda (x) (+ x 2)))) (add2 40))", "42");
-    // ExpectSExpressionEvalResult(
-    //     "(let ((x 1)) "               // outer x = 1
-    //     "  (let ((f (lambda () x)))"  // f captures outer x
-    //     "    (let ((x 2))"            // inner x = 2
-    //     "      (f))))",               // should see 1
-    //     "1"
-    // );
-    // ExpectSExpressionEvalResult(
-    //     "(let ((x 1)) "
-    //     "  (let ((f (lambda () x))) "
-    //     "    (set! x 2) "
-    //     "    (f)))",
-    //     "2"
-    // );
-    // ExpectSExpressionEvalResult(
-    //     "(let ((x 0)) "
-    //     "  (let ((inc (lambda () (set! x (+ x 1)) x))) "
-    //     "    (list (inc) (inc) (inc))) )",
-    //     "(1 2 3)"
-    // );
+void LambdaTests() {
+    ExpectEvalResult("(procedure? (lambda (x) x))", "#t");
 
+    ExpectEvalResult( "((lambda (x) x) 10)", "10");
+    ExpectEvalResult( "((lambda (x y) (+ x y)) 1 2)", "3");
+    ExpectEvalResult( "((lambda () 42))", "42");
+    ExpectEvalResult( "(let ((add2 (lambda (x) (+ x 2)))) (add2 40))", "42");
+    ExpectEvalResult(
+        "(let ((x 1)) "               // outer x = 1
+        "  (let ((f (lambda () x)))"  // f captures outer x
+        "    (let ((x 2))"            // inner x = 2
+        "      (f))))",               // should see 1
+        "1"
+    );
+    ExpectEvalResult(
+        "(let ((x 1)) "
+        "  (let ((f (lambda () x))) "
+        "    (set! x 2) "
+        "    (f)))",
+        "2"
+    );
+    ExpectEvalResult(
+        "(let ((x 0)) "
+        "  (let ((inc (lambda () (set! x (+ x 1)) x))) "
+        "    (list (inc) (inc) (inc))) )",
+        "(1 2 3)"
+    );
+    ExpectEvalResult(
+        "(let ((x 10)) "
+        "  (let ((f (lambda (y) (+ x y)))) "
+        "    (f 5)))",
+        "15"
+    );
+    ExpectEvalResult(
+        "(let ((x 0)) "
+        "  (let ((inc (lambda () (set! x (+ x 1)) x))) "
+        "    (list (inc) (inc))))",
+        "(1 2)"
+    );
+    ExpectEvalError( "((lambda (x) x))", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+    ExpectEvalError( "((lambda (x) x) 1 2)", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+    ExpectEvalError( "((let ((x 1)) x))", "EVAL_ERROR_NOT_A_PROCEDURE");
+    ExpectEvalError( "((lambda 1 2) 3)", "LAMBDA_ARGUMENT_ERROR");
+    ExpectEvalError( "(lambda (x))", "LAMBDA_ARGUMENT_ERROR");
+}
 
 int main(int argc, char** argv)
 {
@@ -589,6 +612,7 @@ int main(int argc, char** argv)
     IfAndBeginTests();
     AndOrTests();
     LetSetTests();
+    LambdaTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

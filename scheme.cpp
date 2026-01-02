@@ -75,6 +75,7 @@ struct value {
         SYMBOL,
         PAIR,
         PRIMITIVE_PROCEDURE,
+        COMPOUND_PROCEDURE,
     };
 
     struct pair {
@@ -352,6 +353,9 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
         case value::PRIMITIVE_PROCEDURE: {
             StringBuilder->String("#<primitive-procedure>");
         } break;
+        case value::COMPOUND_PROCEDURE: {
+            StringBuilder->String("#<compound-procedure>");
+        } break;
     }
 }
 
@@ -422,7 +426,7 @@ struct eval {
     }
 
     static bool ProcedureQ(value* Value) {
-        return Value->Type == value::PRIMITIVE_PROCEDURE;
+        return Value->Type == value::PRIMITIVE_PROCEDURE || Value->Type == value::COMPOUND_PROCEDURE;
     }
 
     static bool FalseQ(value* Value) {
@@ -443,6 +447,7 @@ struct eval {
             case value::SYMBOL: return StringEqual(A->Symbol, B->Symbol);
             case value::PAIR: return EqualQ(Car(A), Car(B)) && EqualQ(Cdr(A), Cdr(B));
             case value::PRIMITIVE_PROCEDURE: return A->PrimitiveProcedure == B->PrimitiveProcedure;
+            case value::COMPOUND_PROCEDURE: return A == B;
         }
     }
 
@@ -465,6 +470,15 @@ struct eval {
     static value* ExtendEnvironment(value* Name, value* Value, value* Environment, mem* Mem) {
         value* Entry = Cons(Name, Value, Mem);
         return Cons(Entry, Environment, Mem);
+    }
+
+    static value* ExtendEnvironmentWithLists(value* Names, value* Values, value* Environment, mem* Mem) {
+        while (PairQ(Names)) {
+            Environment = ExtendEnvironment(Car(Names), Car(Values), Environment, Mem);
+            Names = Cdr(Names);
+            Values = Cdr(Values);
+        }
+        return Environment;
     }
 
     static value* EvalDefine(value* Operands, context* Context, error* Error) {
@@ -543,9 +557,35 @@ struct eval {
         return &value::Unspecified;
     }
 
+    static value* MakeClosure(value* Arguments, value* BodySequence, value* Environment, mem* Mem) {
+        value* Procedure = Cons(BodySequence, Environment, Mem);
+        Procedure = Cons(Arguments, Procedure, Mem);
+        Procedure->Type = value::COMPOUND_PROCEDURE;
+        return Procedure;
+    }
+
+    static value* EvalLambda(value* Operands, context* Context, error* Error) {
+        value* Arguments = Car(Operands);
+        EVAL_ASSERT(ListQ(Arguments), "LAMBDA_ARGUMENT_ERROR");
+        value* BodySequence = Cdr(Operands);
+        EVAL_ASSERT(ListLength(BodySequence) > 0, "LAMBDA_ARGUMENT_ERROR");
+        value* Environment = Context->Environment;
+        value* Closure = MakeClosure(Arguments, BodySequence, Environment, Context->Mem);
+        return Closure;
+    }
+
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
         if (Operator->Type == value::PRIMITIVE_PROCEDURE) {
             return Operator->PrimitiveProcedure(Operands, Context, Error);
+        } else if (Operator->Type == value::COMPOUND_PROCEDURE) {
+            value* Arguments = Car(Operator);
+            value* BodySequence = Car(Cdr(Operator));
+            value* Environment = Cdr(Cdr(Operator));
+
+            EVAL_ASSERT(ListLength(Operands) == ListLength(Arguments), "EVAL_ARGUMENT_LENGTH_MISMATCH");
+            context ApplyContext = *Context;
+            ApplyContext.Environment = ExtendEnvironmentWithLists(Arguments, Operands, Environment, Context->Mem);
+            return EvalSequence(BodySequence, &ApplyContext, Error);
         }
         EVAL_ERROR("EVAL_ERROR_NOT_A_PROCEDURE");
     }
@@ -553,11 +593,12 @@ struct eval {
     static value* Eval(value* Expr, context* Context, error* Error) {
         (void)Context;
         switch (Expr->Type) {
-            case value::UNSPECIFIED: // Error?
+            case value::UNSPECIFIED:
             case value::NIL:
             case value::BOOLEAN:
             case value::NUMBER:
             case value::PRIMITIVE_PROCEDURE:
+            case value::COMPOUND_PROCEDURE:
                 {
                     return Expr;
                 } break;
@@ -591,6 +632,8 @@ struct eval {
                         return EvalLet(Operands, Context, Error);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "set!")) {
                         return EvalSetBang(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "lambda")) {
+                        return EvalLambda(Operands, Context, Error);
                     }
                 }
 
