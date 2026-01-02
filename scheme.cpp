@@ -68,6 +68,7 @@ typedef value* (*primitive_func_ptr)(value* Value, context* Context, error* Erro
 
 struct value {
     enum type {
+        UNSPECIFIED,
         NIL,
         BOOLEAN,
         NUMBER,
@@ -91,14 +92,16 @@ struct value {
         primitive_func_ptr PrimitiveProcedure;
     };
 
+    static value Unspecified;
     static value Nil;
     static value True;
     static value False;
 };
 
-value value::Nil   = { true, value::NIL, { false } };
-value value::True  = { true, value::BOOLEAN, { true } };
-value value::False = { true, value::BOOLEAN, { false } };
+value value::Unspecified   = { true, value::UNSPECIFIED, { false } };
+value value::Nil           = { true, value::NIL, { false } };
+value value::True          = { true, value::BOOLEAN, { true } };
+value value::False     = { true, value::BOOLEAN, { false } };
 
 struct mem {
     typedef void* (*alloc_func)(size_t NumBytes);
@@ -289,6 +292,9 @@ struct parser {
 
 void ValueToString(value* Value, string_builder* StringBuilder) {
     switch (Value->Type) {
+        case value::UNSPECIFIED: {
+            StringBuilder->String("#<unspecified>");
+        } break;
         case value::NIL: {
             StringBuilder->String("()");
         } break;
@@ -430,6 +436,7 @@ struct eval {
     static bool EqualQ(value* A, value* B) {
         if (A->Type != B->Type) return false;
         switch (A->Type) {
+            case value::UNSPECIFIED: return false; // ??
             case value::NIL: return true;
             case value::BOOLEAN: return A->Boolean == B->Boolean;
             case value::NUMBER: return A->Number == B->Number;
@@ -533,7 +540,7 @@ struct eval {
         EVAL_ASSERT_EX(NotNullQ(EnvCell), "SET!_UNBOUND_VARIABLE", Name->Symbol);
         value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
         EnvCell->Pair.Cdr = Value;
-        return Name;
+        return &value::Unspecified;
     }
 
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
@@ -546,6 +553,7 @@ struct eval {
     static value* Eval(value* Expr, context* Context, error* Error) {
         (void)Context;
         switch (Expr->Type) {
+            case value::UNSPECIFIED: // Error?
             case value::NIL:
             case value::BOOLEAN:
             case value::NUMBER:
