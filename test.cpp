@@ -347,6 +347,8 @@ void ExtendableGlobalEnvironmentTests() {
     ExpectEvalResult("(define test 'a) (define test2 'b) test", "a");
     ExpectEvalResult("(define test 'a) (define test2 'b) test2", "b");
 
+    ExpectEvalError("(define q)", "DEFINE_ARGUMENT_ERROR");
+    ExpectEvalError("(define 1 'a)", "DEFINE_ARGUMENT_ERROR");
     ExpectEvalError("(define test 'a) test2", "EVAL_UNDEFINED_SYMBOL");
 }
 
@@ -494,6 +496,81 @@ void AndOrTests() {
     ExpectEvalResult("(or #f #f #f)", "#f");
 }
 
+void LetSetTests() {
+    ExpectEvalResult("(let ((x 1)) x)", "1");
+    ExpectEvalResult("(let ((x 1) (y 2)) (+ x y))", "3");
+    ExpectEvalResult("(let () 42)", "42");
+    ExpectEvalResult("(let ((x 1)) (let ((x 2)) x))", "2");
+    ExpectEvalResult("(let ((x 1)) (let ((x 2)) x) x)", "1");
+    ExpectEvalResult("(let ((x 1)) (set! x (+ x 1)) x)", "2");
+    ExpectEvalError("(let 1 2)", "LET_ARGUMENT_ERROR");
+    ExpectEvalError("(let ((x)) x)", "LET_ARGUMENT_ERROR");
+    ExpectEvalError("(let (((1 2)) 3) 4)", "LET_ARGUMENT_ERROR");
+    ExpectEvalError("(let ((x 1)))", "LET_ARGUMENT_ERROR");
+
+    ExpectEvalResult("(let ((x 1)) (set! x 2) x)", "2");
+    ExpectEvalResult("(let ((x 1)) (set! x 2) (set! x 3) x)", "3");
+    ExpectEvalResult(
+        "(let ((x 1)) "
+        "  (let () (set! x 5)) "
+        "  x)",
+        "5"
+    );
+    ExpectEvalResult(
+        "(let ((x 1) (y 10)) "
+        "  (set! x (+ x y)) "
+        "  x)",
+        "11"
+    );
+    ExpectEvalResult(
+        "(let ((x 1)) "
+        "  (let ((x 2)) "
+        "    (set! x 3) "
+        "    x))",
+        "3"
+    );
+    ExpectEvalResult(
+        "(let ((x 1)) "
+        "  (let ((x 2)) "
+        "    (set! x 3)) "
+        "  x)",
+        "1"
+    );
+    ExpectEvalError("(set! x 1)", "SET!_UNBOUND_VARIABLE");
+    ExpectEvalError("(begin (set! y 2) y)", "SET!_UNBOUND_VARIABLE");
+    ExpectEvalError("(set!)", "SET!_ARGUMENT_ERROR");
+    ExpectEvalError("(set! x)", "SET!_ARGUMENT_ERROR");
+    ExpectEvalError("(set! x 1 2)", "SET!_ARGUMENT_ERROR");
+    ExpectEvalError("(set! 1 2)", "SET!_ILLEGAL_TARGET");
+    ExpectEvalError("(set! (quote x) 1)", "SET!_ILLEGAL_TARGET");
+    // NOTE: You could think about adding these if it makes sense for your implementation
+    // ExpectEvalError("(set! if 1)", "SET!_ILLEGAL_TARGET"); // Special form
+    // ExpectEvalError("(set! + 1)", "SET!_ILLEGAL_TARGET"); // Registered function
+}
+
+    // ExpectSExpressionEvalResult( "(let ((add2 (lambda (x) (+ x 2)))) (add2 40))", "42");
+    // ExpectSExpressionEvalResult(
+    //     "(let ((x 1)) "               // outer x = 1
+    //     "  (let ((f (lambda () x)))"  // f captures outer x
+    //     "    (let ((x 2))"            // inner x = 2
+    //     "      (f))))",               // should see 1
+    //     "1"
+    // );
+    // ExpectSExpressionEvalResult(
+    //     "(let ((x 1)) "
+    //     "  (let ((f (lambda () x))) "
+    //     "    (set! x 2) "
+    //     "    (f)))",
+    //     "2"
+    // );
+    // ExpectSExpressionEvalResult(
+    //     "(let ((x 0)) "
+    //     "  (let ((inc (lambda () (set! x (+ x 1)) x))) "
+    //     "    (list (inc) (inc) (inc))) )",
+    //     "(1 2 3)"
+    // );
+
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -511,6 +588,7 @@ int main(int argc, char** argv)
     NumberTests();
     IfAndBeginTests();
     AndOrTests();
+    LetSetTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

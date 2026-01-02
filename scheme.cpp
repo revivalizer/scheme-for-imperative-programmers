@@ -455,12 +455,17 @@ struct eval {
         return Assoc(Needle, Cdr(Haystack), Error);
     }
 
+    static value* ExtendEnvironment(value* Name, value* Value, value* Environment, mem* Mem) {
+        value* Entry = Cons(Name, Value, Mem);
+        return Cons(Entry, Environment, Mem);
+    }
+
     static value* EvalDefine(value* Operands, context* Context, error* Error) {
         EVAL_ASSERT(ListLength(Operands) == 2, "DEFINE_ARGUMENT_ERROR");
         value* Symbol = Car(Operands);
+        EVAL_ASSERT(SymbolQ(Symbol), "DEFINE_ARGUMENT_ERROR");
         value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
-        value* Entry = Cons(Symbol, Value, Context->Mem);
-        Context->Environment = Cons(Entry, Context->Environment, Context->Mem);
+        Context->Environment = ExtendEnvironment(Symbol, Value, Context->Environment, Context->Mem);
         return Symbol;
     }
 
@@ -495,6 +500,40 @@ struct eval {
             Operands = Cdr(Operands);
         }
         return &value::False;
+    }
+
+    static value* EvalLet(value* Operands, context* Context, error* Error) {
+        EVAL_ASSERT(ListLength(Operands) >= 2, "LET_ARGUMENT_ERROR");
+        value* Bindings = Car(Operands);
+        EVAL_ASSERT(ListQ(Bindings), "LET_ARGUMENT_ERROR");
+        value* Body = Cdr(Operands);
+
+        value* NewEnvironment = Context->Environment;
+
+        while (Bindings->Type == value::PAIR) {
+            value* Binding = Car(Bindings);
+            EVAL_ASSERT(ListLength(Binding) == 2, "LET_ARGUMENT_ERROR");
+            value* Name = Car(Binding);
+            EVAL_ASSERT(SymbolQ(Name), "LET_ARGUMENT_ERROR");
+            value* Value = Eval(Cadr(Binding), Context, Error); CHECK_ERROR();
+            NewEnvironment = ExtendEnvironment(Name, Value, NewEnvironment, Context->Mem);
+            Bindings = Cdr(Bindings);
+        }
+
+        context LetContext = *Context;
+        LetContext.Environment = NewEnvironment;
+        return EvalSequence(Body, &LetContext, Error);
+    }
+
+    static value* EvalSetBang(value* Operands, context* Context, error* Error) {
+        EVAL_ASSERT(ListLength(Operands) == 2, "SET!_ARGUMENT_ERROR");
+        value* Name = Car(Operands);
+        EVAL_ASSERT(SymbolQ(Name), "SET!_ILLEGAL_TARGET");
+        value* EnvCell = Assoc(Name, Context->Environment, Error); CHECK_ERROR();
+        EVAL_ASSERT_EX(NotNullQ(EnvCell), "SET!_UNBOUND_VARIABLE", Name->Symbol);
+        value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
+        EnvCell->Pair.Cdr = Value;
+        return Name;
     }
 
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
@@ -540,6 +579,10 @@ struct eval {
                         return EvalAnd(Operands, Context, Error);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "or")) {
                         return EvalOr(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "let")) {
+                        return EvalLet(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "set!")) {
+                        return EvalSetBang(Operands, Context, Error);
                     }
                 }
 
