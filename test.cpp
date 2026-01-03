@@ -594,6 +594,46 @@ void LambdaTests() {
     ExpectEvalError( "(lambda (x))", "LAMBDA_ARGUMENT_ERROR");
 }
 
+void DottedPairTests() {
+    ExpectParseResult("()", "()");
+    ExpectParseResult("(a . b)", "(a . b)");
+    ExpectParseResult("(1 . 2)", "(1 . 2)");
+    ExpectParseResult("((a . b) . c)", "((a . b) . c)");
+    ExpectParseResult("(a . (b . (c . ())))", "(a b c)"); // canonical print as proper list
+
+    ExpectParseResult("(a b . c)", "(a b . c)");
+    ExpectParseResult("(a b . (c))", "(a b c)");
+    ExpectParseResult("(a b . (c d))", "(a b c d)");
+    ExpectParseResult("(a . (b c))", "(a b c)");
+    ExpectParseResult("(a . (b . c))", "(a b . c)");
+    ExpectParseResult("(a b c . ())", "(a b c)");
+
+    ExpectParseResult(".", ".");
+    //ExpectParseResult("'(.)", "(quote (.))");    // list containing symbol "."
+    //ExpectParseResult("(a .)", "(a .)");         // if you allow "." as symbol after a, not dotted syntax
+
+    ExpectParseResult("'(a . b)", "(quote (a . b))");
+    ExpectParseResult("'(a b . c)", "(quote (a b . c))");
+    ExpectParseResult("'(a b . (c d))", "(quote (a b c d))");
+    ExpectParseResult("'((a . b) c)", "(quote ((a . b) c))");
+
+    // NOTE: Some of these suggested tests depend on . being treated as not part of the symbol
+    // ExpectParseResult("(a.b)", "(a . b)");
+    // ExpectParseResult("(a .b)", "(a . b)");
+    // ExpectParseResult("(a. b)", "(a . b)");
+    ExpectParseResult("(a\t.\n b)", "(a . b)");
+
+    ExpectParseError("( . a)", "ERROR_PARSE_DOT_IN_HEAD", 0, 3);
+    ExpectParseError("(a .)", "ERROR_PARSE_DOT_MISSING_CDR", 0, 4);
+    ExpectParseError("(a b .)", "ERROR_PARSE_DOT_MISSING_CDR", 0, 6);
+    ExpectParseError("(a . b c)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 7);
+    ExpectParseError("(a . b . c)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 7);
+    ExpectParseError("(a b . c d)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 9);
+
+    //ExpectParseError("(a .. b)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 0);
+    ExpectParseError("(a . . b)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 7);
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -613,6 +653,7 @@ int main(int argc, char** argv)
     AndOrTests();
     LetSetTests();
     LambdaTests();
+    DottedPairTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

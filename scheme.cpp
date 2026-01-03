@@ -176,6 +176,7 @@ value* Cons(value* Car, value* Cdr, mem* Mem) {
 }
 
 #define PARSE_ERROR(ERROR, ROW, COL) { Error->Type = error::PARSE_ERROR; Error->Error = ERROR; Error->Row = ROW; Error->Col = COL; return 0; }
+#define PARSE_ASSERT(CONDITION, ERROR, ROW, COL) { if (!(CONDITION)) { PARSE_ERROR(ERROR, ROW, COL); } }
 #define CHECK_ERROR() { if (Error->Type != error::NO_ERROR) return 0; }
 
 struct parser {
@@ -238,6 +239,7 @@ struct parser {
     }
 
     value* ParseSExpressionSequenceUntil(char Delimiter, context* Context, error* Error, int ParenOpenRow = 0, int ParenOpenCol = 0) {
+        bool FirstElement = (Row == ParenOpenRow) && ((Col - 1) == ParenOpenCol);
         while (true) {
             EatWhitespace();
             if (Match(Delimiter)) {
@@ -245,6 +247,22 @@ struct parser {
             } else if (Match('\0')) {
                 PARSE_ERROR("UNMATCHED_OPEN_PAREN", ParenOpenRow, ParenOpenCol); // In practice we are only looking for open parens
             } else {
+                if (Delimiter == ')' && Match('.')) {
+                    PARSE_ASSERT(!FirstElement, "ERROR_PARSE_DOT_IN_HEAD", Row, Col);
+
+                    EatWhitespace();
+                    PARSE_ASSERT(C() != ')', "ERROR_PARSE_DOT_MISSING_CDR", Row, Col);
+
+                    value* Last = ParseSExpression(Context, Error); CHECK_ERROR();
+
+                    EatWhitespace();
+                    if (!Match(')')) {
+                        PARSE_ERROR("ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", Row, Col);
+                    }
+
+                    return Last;
+                }
+
                 value* Car = ParseSExpression(Context, Error); CHECK_ERROR();
                 value* Cdr = ParseSExpressionSequenceUntil(Delimiter, Context, Error, ParenOpenRow, ParenOpenCol); CHECK_ERROR();
                 return Context->Mem->AllocPair(Car, Cdr);
