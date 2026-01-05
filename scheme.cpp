@@ -584,7 +584,7 @@ struct eval {
 
     static value* EvalLambda(value* Operands, context* Context, error* Error) {
         value* Arguments = Car(Operands);
-        EVAL_ASSERT(ListQ(Arguments), "LAMBDA_ARGUMENT_ERROR");
+        EVAL_ASSERT(ListQ(Arguments) || SymbolQ(Arguments), "LAMBDA_ARGUMENT_ERROR");
         value* BodySequence = Cdr(Operands);
         EVAL_ASSERT(ListLength(BodySequence) > 0, "LAMBDA_ARGUMENT_ERROR");
         value* Environment = Context->Environment;
@@ -600,9 +600,27 @@ struct eval {
             value* BodySequence = Car(Cdr(Operator));
             value* Environment = Cdr(Cdr(Operator));
 
-            EVAL_ASSERT(ListLength(Operands) == ListLength(Arguments), "EVAL_ARGUMENT_LENGTH_MISMATCH");
+            value* ExtendedEnvironment = Environment;
+            if (SymbolQ(Arguments)) {
+                ExtendedEnvironment = ExtendEnvironment(Arguments, Operands, ExtendedEnvironment, Context->Mem);
+            } else {
+                while (PairQ(Arguments)) {
+                    EVAL_ASSERT(SymbolQ(Car(Arguments)), "CLOSURE_INVALID_FORMALS");
+                    EVAL_ASSERT(PairQ(Operands), "EVAL_ARGUMENT_LENGTH_MISMATCH");
+
+                    ExtendedEnvironment = ExtendEnvironment(Car(Arguments), Car(Operands), ExtendedEnvironment, Context->Mem);
+                    Arguments = Cdr(Arguments);
+                    Operands = Cdr(Operands);
+                }
+                if (!NullQ(Arguments)) {
+                    EVAL_ASSERT(SymbolQ(Arguments), "CLOSURE_INVALID_FORMALS");
+                    ExtendedEnvironment = ExtendEnvironment(Arguments, Operands, ExtendedEnvironment, Context->Mem);
+                } else {
+                    EVAL_ASSERT(NullQ(Operands), "EVAL_ARGUMENT_LENGTH_MISMATCH");
+                }
+            }
             context ApplyContext = *Context;
-            ApplyContext.Environment = ExtendEnvironmentWithLists(Arguments, Operands, Environment, Context->Mem);
+            ApplyContext.Environment = ExtendedEnvironment;
             return EvalSequence(BodySequence, &ApplyContext, Error);
         }
         EVAL_ERROR("EVAL_ERROR_NOT_A_PROCEDURE");

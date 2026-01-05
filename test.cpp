@@ -617,7 +617,7 @@ void DottedPairTests() {
     ExpectParseResult("'(a b . (c d))", "(quote (a b c d))");
     ExpectParseResult("'((a . b) c)", "(quote ((a . b) c))");
 
-    // NOTE: Some of these suggested tests depend on . being treated as not part of the symbol
+    // NOTE: These tests depend on your parser
     // ExpectParseResult("(a.b)", "(a . b)");
     // ExpectParseResult("(a .b)", "(a . b)");
     // ExpectParseResult("(a. b)", "(a . b)");
@@ -632,6 +632,29 @@ void DottedPairTests() {
 
     //ExpectParseError("(a .. b)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 0);
     ExpectParseError("(a . . b)", "ERROR_PARSE_DOT_TOO_MANY_TAIL_ELEMENTS", 0, 7);
+}
+
+void LambdaVariadicArgsTests() {
+    ExpectEvalResult("((lambda args args))", "()");
+    ExpectEvalResult("((lambda args args) 1)", "(1)");
+    ExpectEvalResult("((lambda args args) 1 2 3)", "(1 2 3)");
+    ExpectEvalResult("((lambda args (car args)) 10 20)", "10");
+    ExpectEvalResult("((lambda (x . rest) x) 10)", "10");
+    ExpectEvalResult("((lambda (x . rest) rest) 10)", "()");
+    ExpectEvalResult("((lambda (x . rest) rest) 10 20 30)", "(20 30)");
+    ExpectEvalResult("((lambda (x . rest) (car rest)) 10 20 30)", "20");
+    ExpectEvalResult("((lambda (x y . rest) (list x y rest)) 1 2)", "(1 2 ())");
+    ExpectEvalResult("((lambda (x y . rest) (list x y rest)) 1 2 3 4)", "(1 2 (3 4))");
+    ExpectEvalResult("((lambda (x y . rest) rest) 1 2 3)", "(3)");
+    ExpectEvalResult("((lambda (x . rest) (pair? rest)) 1 2 3)", "#t");
+    ExpectEvalResult("((lambda (x . rest) (null? rest)) 1)", "#t");
+
+    ExpectEvalError("((lambda (x . rest) x))", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+    ExpectEvalError("((lambda (x y . rest) x) 1)", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+    ExpectEvalError("((lambda (x y . rest) x))", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+
+    ExpectEvalError("((lambda (x . 123) x) 1)", "CLOSURE_INVALID_FORMALS");
+    ExpectEvalError("((lambda ((x) . rest) x) 1)", "CLOSURE_INVALID_FORMALS");
 }
 
 int main(int argc, char** argv)
@@ -654,6 +677,7 @@ int main(int argc, char** argv)
     LetSetTests();
     LambdaTests();
     DottedPairTests();
+    LambdaVariadicArgsTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
