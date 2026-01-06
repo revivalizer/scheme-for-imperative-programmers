@@ -657,6 +657,26 @@ void LambdaVariadicArgsTests() {
     ExpectEvalError("((lambda ((x) . rest) x) 1)", "CLOSURE_INVALID_FORMALS");
 }
 
+void ApplyTests() {
+    ExpectEvalResult("(apply (lambda (x) x) '(10))", "10");
+    ExpectEvalResult("(apply + '(1 2 3 4))", "10");
+    ExpectEvalResult("(apply + 1 2 '(3 4))", "10");
+    ExpectEvalResult("(apply (lambda () 42) '())", "42");
+    ExpectEvalResult(
+        "(let ((f (lambda (a b c) (list a b c))))"
+        "  (apply f '(1 2 3)))",
+        "(1 2 3)");
+    ExpectEvalResult(
+        "(apply (lambda (f) (f 5))"
+        "       (list (lambda (x) (* x 2))))",
+        "10");
+    ExpectEvalError("(apply 10 '(1 2 3))", "EVAL_ERROR_NOT_A_PROCEDURE");
+    ExpectEvalError("(apply + 1 2 3)", "APPLY_ARGUMENT_ERROR");
+    ExpectEvalError("(apply + '(1 . 2))", "APPLY_ARGUMENT_ERROR");
+    ExpectEvalError("(apply + 10)", "APPLY_ARGUMENT_ERROR");
+    ExpectEvalError("(apply +)", "APPLY_ARGUMENT_ERROR");
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -678,6 +698,7 @@ int main(int argc, char** argv)
     LambdaTests();
     DottedPairTests();
     LambdaVariadicArgsTests();
+    ApplyTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

@@ -431,6 +431,13 @@ struct eval {
         return PairQ(Value) || NullQ(Value);
     }
 
+    static bool ProperListQ(value* List) {
+        while (List->Type == value::PAIR) {
+            List = Cdr(List);
+        }
+        return NullQ(List);
+    }
+
     static bool SymbolQ(value* Value) {
         return Value->Type == value::SYMBOL;
     }
@@ -592,6 +599,25 @@ struct eval {
         return Closure;
     }
 
+    static value* EvalApplyArgsRec(value* Args, context* Context, error* Error) {
+        EVAL_ASSERT(ListQ(Args), "APPLY_ARGUMENT_ERROR");
+        if (NullQ(Cdr(Args))) {
+            EVAL_ASSERT(ListQ(Car(Args)), "APPLY_ARGUMENT_ERROR");
+            value* EvaluatedList = Eval(Car(Args), Context, Error); CHECK_ERROR();
+            EVAL_ASSERT(ProperListQ(EvaluatedList), "APPLY_ARGUMENT_ERROR");
+            return EvaluatedList;
+        } else {
+            return Cons(Eval(Car(Args), Context, Error), EvalApplyArgsRec(Cdr(Args), Context, Error), Context->Mem);
+        }
+    }
+
+    static value* EvalApply(value* Operands, context* Context, error* Error) {
+        EVAL_ASSERT(ListLength(Operands) >= 2, "APPLY_ARGUMENT_ERROR");
+        value* Operator = Eval(Car(Operands), Context, Error); CHECK_ERROR();
+        value* EvaluatedArgs = EvalApplyArgsRec(Cdr(Operands), Context, Error); CHECK_ERROR();
+        return Apply(Operator, EvaluatedArgs, Context, Error);
+    }
+
     static value* Apply(value* Operator, value* Operands, context* Context, error* Error) {
         if (Operator->Type == value::PRIMITIVE_PROCEDURE) {
             return Operator->PrimitiveProcedure(Operands, Context, Error);
@@ -670,6 +696,8 @@ struct eval {
                         return EvalSetBang(Operands, Context, Error);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "lambda")) {
                         return EvalLambda(Operands, Context, Error);
+                    } else if (StringEqual(UnevaluatedOperator->Symbol, "apply")) {
+                        return EvalApply(Operands, Context, Error);
                     }
                 }
 
