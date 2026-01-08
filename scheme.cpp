@@ -508,11 +508,27 @@ struct eval {
 
     static value* EvalDefine(value* Operands, context* Context, error* Error) {
         EVAL_ASSERT(ListLength(Operands) == 2, "DEFINE_ARGUMENT_ERROR");
-        value* Symbol = Car(Operands);
-        EVAL_ASSERT(SymbolQ(Symbol), "DEFINE_ARGUMENT_ERROR");
-        value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
-        Context->Environment = ExtendEnvironment(Symbol, Value, Context->Environment, Context->Mem);
-        return Symbol;
+        if (PairQ(Car(Operands))) {
+            value* NameAndArgs = Car(Operands);
+            value* Body = Cdr(Operands);
+
+            value* Name = Car(NameAndArgs);
+            value* Args = Cdr(NameAndArgs);
+
+            Context->Environment = ExtendEnvironment(Name, &value::Unspecified, Context->Environment, Context->Mem);
+
+            value* Lambda = EvalLambda(Args, Body, Context, Error); CHECK_ERROR();
+
+            Car(Context->Environment)->Pair.Cdr = Lambda;
+
+            return Name;
+        } else {
+            value* Symbol = Car(Operands);
+            EVAL_ASSERT(SymbolQ(Symbol), "DEFINE_ARGUMENT_ERROR");
+            value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
+            Context->Environment = ExtendEnvironment(Symbol, Value, Context->Environment, Context->Mem);
+            return Symbol;
+        }
     }
 
     static value* EvalIf(value* Operands, context* Context, error* Error) {
@@ -589,10 +605,8 @@ struct eval {
         return Procedure;
     }
 
-    static value* EvalLambda(value* Operands, context* Context, error* Error) {
-        value* Arguments = Car(Operands);
+    static value* EvalLambda(value* Arguments, value* BodySequence, context* Context, error* Error) {
         EVAL_ASSERT(ListQ(Arguments) || SymbolQ(Arguments), "LAMBDA_ARGUMENT_ERROR");
-        value* BodySequence = Cdr(Operands);
         EVAL_ASSERT(ListLength(BodySequence) > 0, "LAMBDA_ARGUMENT_ERROR");
         value* Environment = Context->Environment;
         value* Closure = MakeClosure(Arguments, BodySequence, Environment, Context->Mem);
@@ -695,7 +709,9 @@ struct eval {
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "set!")) {
                         return EvalSetBang(Operands, Context, Error);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "lambda")) {
-                        return EvalLambda(Operands, Context, Error);
+                        value* Arguments = Car(Operands);
+                        value* BodySequence = Cdr(Operands);
+                        return EvalLambda(Arguments, BodySequence, Context, Error);
                     } else if (StringEqual(UnevaluatedOperator->Symbol, "apply")) {
                         return EvalApply(Operands, Context, Error);
                     }

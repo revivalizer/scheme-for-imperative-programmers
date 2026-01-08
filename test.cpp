@@ -677,6 +677,46 @@ void ApplyTests() {
     ExpectEvalError("(apply +)", "APPLY_ARGUMENT_ERROR");
 }
 
+void DefineFunctionTests() {
+    ExpectEvalResult("(define (id x) x) (id 'a)", "a");
+    ExpectEvalError("(define (id x) x) (id)", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+    ExpectEvalError("(define (id x) x) (id 1 2)", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+
+    ExpectEvalResult("(define (id x) x) (define (use x) (id x)) (use 'z)", "z");
+    ExpectEvalResult("(define (f x) x) (define (f x) (quote new)) (f 123)", "new");
+    ExpectEvalResult("(define (f x) x) (procedure? f)", "#t");
+
+    ExpectEvalResult("(define (f . args) args) (f 1 2 3)", "(1 2 3)");
+    ExpectEvalResult("(define (f . args) args) (f)", "()");
+    ExpectEvalResult("(define (g x . rest) rest) (g 10 20 30)", "(20 30)");
+    ExpectEvalError("(define (g x . rest) rest) (g)", "EVAL_ARGUMENT_LENGTH_MISMATCH");
+
+    ExpectEvalResult(
+        "(define (fact n) "
+        "  (if (= n 0) "
+        "      1 "
+        "      (* n (fact (- n 1))))) "
+        "(fact 5)",
+        "120"
+    );
+
+    ExpectEvalResult(
+        "(define (fact-iter n acc) "
+        "  (if (= n 0) "
+        "      acc "
+        "      (fact-iter (- n 1) (* acc n)))) "
+        "(fact-iter 5 1)",
+        "120"
+    );
+
+    ExpectEvalResult(
+        "(define (even? n) (if (= n 0) #t (odd? (- n 1)))) "
+        "(define (odd?  n) (if (= n 0) #f (even? (- n 1)))) "
+        "(even? 6)",
+        "#t"
+    );
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -699,6 +739,7 @@ int main(int argc, char** argv)
     DottedPairTests();
     LambdaVariadicArgsTests();
     ApplyTests();
+    DefineFunctionTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
