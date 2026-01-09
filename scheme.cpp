@@ -76,11 +76,17 @@ struct value {
         PAIR,
         PRIMITIVE_PROCEDURE,
         COMPOUND_PROCEDURE,
+        FRAME,
     };
 
     struct pair {
         value* Car;
         value* Cdr;
+    };
+
+    struct frame {
+        value* Parent;
+        value* Bindings;
     };
 
     bool IsAlive;
@@ -91,6 +97,7 @@ struct value {
         const char* Symbol;
         pair Pair;
         primitive_func_ptr PrimitiveProcedure;
+        frame Frame;
     };
 
     static value Unspecified;
@@ -162,6 +169,13 @@ struct mem {
     value* AllocPrimitiveProcedure(primitive_func_ptr Proc) {
         value* Value = AllocValue(value::PRIMITIVE_PROCEDURE);
         Value->PrimitiveProcedure = Proc;
+        return Value;
+    }
+
+    value* AllocFrame(value* Parent) {
+        value* Value = AllocValue(value::FRAME);
+        Value->Frame.Parent = Parent;
+        Value->Frame.Bindings = &value::Nil;
         return Value;
     }
 };
@@ -374,6 +388,9 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
         case value::COMPOUND_PROCEDURE: {
             StringBuilder->String("#<compound-procedure>");
         } break;
+        case value::FRAME: {
+            FATAL_ERROR("FRAME_TO_STRING");
+        } break;
     }
 }
 
@@ -473,6 +490,10 @@ struct eval {
             case value::PAIR: return EqualQ(Car(A), Car(B)) && EqualQ(Cdr(A), Cdr(B));
             case value::PRIMITIVE_PROCEDURE: return A->PrimitiveProcedure == B->PrimitiveProcedure;
             case value::COMPOUND_PROCEDURE: return A == B;
+            case value::FRAME: {
+                FATAL_ERROR("FRAME_EQUAL");
+                return false;
+            } break;
         }
     }
 
@@ -492,18 +513,17 @@ struct eval {
         return Assoc(Needle, Cdr(Haystack), Error);
     }
 
-    static value* ExtendEnvironment(value* Name, value* Value, value* Environment, mem* Mem) {
+    static void ExtendEnvironment(value* Name, value* Value, value* Environment, mem* Mem) {
         value* Entry = Cons(Name, Value, Mem);
-        return Cons(Entry, Environment, Mem);
+        Environment->Frame.Bindings = Cons(Entry, Environment->Frame.Bindings, Mem);
     }
 
-    static value* ExtendEnvironmentWithLists(value* Names, value* Values, value* Environment, mem* Mem) {
+    static void ExtendEnvironmentWithLists(value* Names, value* Values, value* Environment, mem* Mem) {
         while (PairQ(Names)) {
-            Environment = ExtendEnvironment(Car(Names), Car(Values), Environment, Mem);
+            ExtendEnvironment(Car(Names), Car(Values), Environment, Mem);
             Names = Cdr(Names);
             Values = Cdr(Values);
         }
-        return Environment;
     }
 
     static value* EvalDefine(value* Operands, context* Context, error* Error) {
@@ -515,18 +535,15 @@ struct eval {
             value* Name = Car(NameAndArgs);
             value* Args = Cdr(NameAndArgs);
 
-            Context->Environment = ExtendEnvironment(Name, &value::Unspecified, Context->Environment, Context->Mem);
-
             value* Lambda = EvalLambda(Args, Body, Context, Error); CHECK_ERROR();
-
-            Car(Context->Environment)->Pair.Cdr = Lambda;
+            ExtendEnvironment(Name, Lambda, Context->Environment, Context->Mem);
 
             return Name;
         } else {
             value* Symbol = Car(Operands);
             EVAL_ASSERT(SymbolQ(Symbol), "DEFINE_ARGUMENT_ERROR");
             value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
-            Context->Environment = ExtendEnvironment(Symbol, Value, Context->Environment, Context->Mem);
+            ExtendEnvironment(Symbol, Value, Context->Environment, Context->Mem);
             return Symbol;
         }
     }
@@ -570,7 +587,7 @@ struct eval {
         EVAL_ASSERT(ListQ(Bindings), "LET_ARGUMENT_ERROR");
         value* Body = Cdr(Operands);
 
-        value* NewEnvironment = Context->Environment;
+        value* NewEnvironment = Context->Mem->AllocFrame(Context->Environment);
 
         while (Bindings->Type == value::PAIR) {
             value* Binding = Car(Bindings);
@@ -578,7 +595,7 @@ struct eval {
             value* Name = Car(Binding);
             EVAL_ASSERT(SymbolQ(Name), "LET_ARGUMENT_ERROR");
             value* Value = Eval(Cadr(Binding), Context, Error); CHECK_ERROR();
-            NewEnvironment = ExtendEnvironment(Name, Value, NewEnvironment, Context->Mem);
+            ExtendEnvironment(Name, Value, NewEnvironment, Context->Mem);
             Bindings = Cdr(Bindings);
         }
 
@@ -591,7 +608,7 @@ struct eval {
         EVAL_ASSERT(ListLength(Operands) == 2, "SET!_ARGUMENT_ERROR");
         value* Name = Car(Operands);
         EVAL_ASSERT(SymbolQ(Name), "SET!_ILLEGAL_TARGET");
-        value* EnvCell = Assoc(Name, Context->Environment, Error); CHECK_ERROR();
+        value* EnvCell = Lookup(Name, Context->Environment, Error); CHECK_ERROR();
         EVAL_ASSERT_EX(NotNullQ(EnvCell), "SET!_UNBOUND_VARIABLE", Name->Symbol);
         value* Value = Eval(Cadr(Operands), Context, Error); CHECK_ERROR();
         EnvCell->Pair.Cdr = Value;
@@ -608,8 +625,8 @@ struct eval {
     static value* EvalLambda(value* Arguments, value* BodySequence, context* Context, error* Error) {
         EVAL_ASSERT(ListQ(Arguments) || SymbolQ(Arguments), "LAMBDA_ARGUMENT_ERROR");
         EVAL_ASSERT(ListLength(BodySequence) > 0, "LAMBDA_ARGUMENT_ERROR");
-        value* Environment = Context->Environment;
-        value* Closure = MakeClosure(Arguments, BodySequence, Environment, Context->Mem);
+        value* ParentEnvironment = Context->Environment;
+        value* Closure = MakeClosure(Arguments, BodySequence, ParentEnvironment, Context->Mem);
         return Closure;
     }
 
@@ -638,37 +655,53 @@ struct eval {
         } else if (Operator->Type == value::COMPOUND_PROCEDURE) {
             value* Arguments = Car(Operator);
             value* BodySequence = Car(Cdr(Operator));
-            value* Environment = Cdr(Cdr(Operator));
+            value* ParentEnvironment = Cdr(Cdr(Operator));
+            value* NewEnvironment = Context->Mem->AllocFrame(ParentEnvironment);
 
-            value* ExtendedEnvironment = Environment;
             if (SymbolQ(Arguments)) {
-                ExtendedEnvironment = ExtendEnvironment(Arguments, Operands, ExtendedEnvironment, Context->Mem);
+                ExtendEnvironment(Arguments, Operands, NewEnvironment, Context->Mem);
             } else {
                 while (PairQ(Arguments)) {
                     EVAL_ASSERT(SymbolQ(Car(Arguments)), "CLOSURE_INVALID_FORMALS");
                     EVAL_ASSERT(PairQ(Operands), "EVAL_ARGUMENT_LENGTH_MISMATCH");
 
-                    ExtendedEnvironment = ExtendEnvironment(Car(Arguments), Car(Operands), ExtendedEnvironment, Context->Mem);
+                    ExtendEnvironment(Car(Arguments), Car(Operands), NewEnvironment, Context->Mem);
                     Arguments = Cdr(Arguments);
                     Operands = Cdr(Operands);
                 }
                 if (!NullQ(Arguments)) {
                     EVAL_ASSERT(SymbolQ(Arguments), "CLOSURE_INVALID_FORMALS");
-                    ExtendedEnvironment = ExtendEnvironment(Arguments, Operands, ExtendedEnvironment, Context->Mem);
+                    ExtendEnvironment(Arguments, Operands, NewEnvironment, Context->Mem);
                 } else {
                     EVAL_ASSERT(NullQ(Operands), "EVAL_ARGUMENT_LENGTH_MISMATCH");
                 }
             }
             context ApplyContext = *Context;
-            ApplyContext.Environment = ExtendedEnvironment;
+            ApplyContext.Environment = NewEnvironment;
             return EvalSequence(BodySequence, &ApplyContext, Error);
         }
         EVAL_ERROR("EVAL_ERROR_NOT_A_PROCEDURE");
     }
 
+    static value* Lookup(value* Expr, value* Environment, error* Error) {
+        value* FrameValue = Assoc(Expr, Environment->Frame.Bindings, Error); CHECK_ERROR();
+        if (NotNullQ(FrameValue)) {
+            return FrameValue;
+        }
+        if (NullQ(Environment->Frame.Parent)) {
+            return &value::Nil;
+        }
+        return Lookup(Expr, Environment->Frame.Parent, Error);
+    }
+
     static value* Eval(value* Expr, context* Context, error* Error) {
         (void)Context;
         switch (Expr->Type) {
+            case value::FRAME: {
+                FATAL_ERROR("FRAME_EVAL");
+                return nullptr;
+            } break;
+
             case value::UNSPECIFIED:
             case value::NIL:
             case value::BOOLEAN:
@@ -681,7 +714,7 @@ struct eval {
 
             case value::SYMBOL:
                 {
-                    value* EnvCell = Assoc(Expr, Context->Environment, Error); CHECK_ERROR();
+                    value* EnvCell = Lookup(Expr, Context->Environment, Error); CHECK_ERROR();
                     EVAL_ASSERT_EX(NotNullQ(EnvCell), "EVAL_UNDEFINED_SYMBOL", Expr->Symbol);
                     return Cdr(EnvCell);
                 } break;
@@ -883,31 +916,30 @@ struct eval {
     }
 };
 
-value* ExtendEnvironmentWithPrimitiveProcedure(value* Environment, const char* Name, primitive_func_ptr Proc, mem* Mem) {
+void ExtendEnvironmentWithPrimitiveProcedure(value* Environment, const char* Name, primitive_func_ptr Proc, mem* Mem) {
     value* Symbol = Mem->AllocSymbol(Name);
     value* Entry = Cons(Symbol, Mem->AllocPrimitiveProcedure(Proc), Mem);
-    return Cons(Entry, Environment, Mem);
+    Environment->Frame.Bindings = Cons(Entry, Environment->Frame.Bindings, Mem);
 }
 
-value* RegisterBuiltinFunctions(value* Environment, mem* Mem) {
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "car", &eval::CarFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "cdr", &eval::CdrFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "cons", &eval::ConsFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "list", &eval::ListFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "assoc", &eval::AssocFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "pair?", &eval::PairQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "null?", &eval::NullQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "symbol?", &eval::SymbolQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "boolean?", &eval::BooleanQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "number?", &eval::NumberQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "procedure?", &eval::ProcedureQFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "equal?", &eval::EqualQFunc, Mem);
+void RegisterBuiltinFunctions(value* Environment, mem* Mem) {
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "car", &eval::CarFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "cdr", &eval::CdrFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "cons", &eval::ConsFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "list", &eval::ListFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "assoc", &eval::AssocFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "pair?", &eval::PairQFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "null?", &eval::NullQFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "symbol?", &eval::SymbolQFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "boolean?", &eval::BooleanQFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "number?", &eval::NumberQFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "procedure?", &eval::ProcedureQFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "equal?", &eval::EqualQFunc, Mem);
 
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "+", &eval::AddFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "-", &eval::SubFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "*", &eval::MulFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "/", &eval::DivFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "<", &eval::LessThanFunc, Mem);
-    Environment = ExtendEnvironmentWithPrimitiveProcedure(Environment, "=", &eval::EqualsFunc, Mem);
-    return Environment;
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "+", &eval::AddFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "-", &eval::SubFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "*", &eval::MulFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "/", &eval::DivFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "<", &eval::LessThanFunc, Mem);
+    ExtendEnvironmentWithPrimitiveProcedure(Environment, "=", &eval::EqualsFunc, Mem);
 }

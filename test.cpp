@@ -34,14 +34,14 @@ void HandleParseError(const char* Input, error* Error)
 
 void ExpectParseResult(const char* Input, const char* Expected)
 {
-    static const int ValuePoolCapacity = 200;
+    static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
     Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
     context Context = {};
     Context.Mem = &Mem;
-    Context.Environment = &value::Nil;
+    Context.Environment = Mem.AllocFrame(&value::Nil);
 
     error Error = {};
 
@@ -73,14 +73,14 @@ void ExpectParseResult(const char* Input, const char* Expected)
 
 void ExpectParseError(const char* Input, const char* ErrorMessage, int Row, int Col)
 {
-    static const int ValuePoolCapacity = 200;
+    static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
     Mem.Init(ValuePool, ValuePoolCapacity, malloc); // NOTE: Pass in malloc because symbols are duplicated in AllocSymbol
     context Context = {};
     Context.Mem = &Mem;
-    Context.Environment = &value::Nil;
+    Context.Environment = Mem.AllocFrame(&value::Nil);
 
     error Error = {};
 
@@ -134,15 +134,15 @@ void HandleEvalError(const char* Input, error* Error) {
 }
 
 void ExpectEvalResult(const char* Input, const char* Expected) {
-    static const int ValuePoolCapacity = 200;
+    static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
     Mem.Init(ValuePool, ValuePoolCapacity, malloc);
     context Context = {};
     Context.Mem = &Mem;
-    Context.Environment = &value::Nil;
-    Context.Environment = RegisterBuiltinFunctions(Context.Environment, Context.Mem);
+    Context.Environment = Mem.AllocFrame(&value::Nil);
+    RegisterBuiltinFunctions(Context.Environment, Context.Mem);
 
     error Error = {};
 
@@ -174,15 +174,15 @@ void ExpectEvalResult(const char* Input, const char* Expected) {
 }
 
 void ExpectEvalError(const char* Input, const char* ExpectedError) {
-    static const int ValuePoolCapacity = 200;
+    static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
     Mem.Init(ValuePool, ValuePoolCapacity, malloc);
     context Context = {};
     Context.Mem = &Mem;
-    Context.Environment = &value::Nil;
-    Context.Environment = RegisterBuiltinFunctions(Context.Environment, Context.Mem);
+    Context.Environment = Mem.AllocFrame(&value::Nil);
+    RegisterBuiltinFunctions(Context.Environment, Context.Mem);
 
     error Error = {};
 
@@ -301,7 +301,7 @@ void ValueTests() {
 }
 
 void ValuePoolAllocTests() {
-    static const int ValuePoolCapacity = 200;
+    static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
     mem Mem = {};
@@ -714,6 +714,15 @@ void DefineFunctionTests() {
         "(define (odd?  n) (if (= n 0) #f (even? (- n 1)))) "
         "(even? 6)",
         "#t"
+    );
+
+    ExpectEvalResult(
+        "(define (f n) "
+        "  (if (=  n 0) "
+        "      0 "
+        "      (begin (f (- n 1)) n))) "
+        "(f 3)",
+        "3"
     );
 }
 
