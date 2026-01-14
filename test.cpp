@@ -34,6 +34,7 @@ void HandleParseError(const char* Input, error* Error)
 
 void ExpectParseResult(const char* Input, const char* Expected)
 {
+    // TODO: Consider calling CreateContext instead of stack allocating
     static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
@@ -133,25 +134,15 @@ void HandleEvalError(const char* Input, error* Error) {
     }
 }
 
-void ExpectEvalResult(const char* Input, const char* Expected) {
-    static const int ValuePoolCapacity = 300;
-    value ValuePool[ValuePoolCapacity] = {};
-
-    mem Mem = {};
-    Mem.Init(ValuePool, ValuePoolCapacity, malloc);
-    context Context = {};
-    Context.Mem = &Mem;
-    Context.Environment = Mem.AllocFrame(&value::Nil);
-    RegisterBuiltinFunctions(Context.Environment, Context.Mem);
-
+void ExpectEvalResultWithContext(context* Context, const char* Input, const char* Expected) {
     error Error = {};
 
     parser Parser;
     Parser.Init(Input);
-    value* ParseResult = Parser.ParseSExpressionSequenceUntil('\0', &Context, &Error);
+    value* ParseResult = Parser.ParseSExpressionSequenceUntil('\0', Context, &Error);
     HandleParseError(Input, &Error);
 
-    value* EvalResult = eval::EvalSequence(ParseResult, &Context, &Error);
+    value* EvalResult = eval::EvalSequence(ParseResult, Context, &Error);
     HandleEvalError(Input, &Error);
 
     char Buffer[1024];
@@ -173,7 +164,7 @@ void ExpectEvalResult(const char* Input, const char* Expected) {
     }
 }
 
-void ExpectEvalError(const char* Input, const char* ExpectedError) {
+void ExpectEvalResult(const char* Input, const char* Expected) {
     static const int ValuePoolCapacity = 300;
     value ValuePool[ValuePoolCapacity] = {};
 
@@ -184,14 +175,18 @@ void ExpectEvalError(const char* Input, const char* ExpectedError) {
     Context.Environment = Mem.AllocFrame(&value::Nil);
     RegisterBuiltinFunctions(Context.Environment, Context.Mem);
 
+    ExpectEvalResultWithContext(&Context, Input, Expected);
+}
+
+void ExpectEvalErrorWithContext(context* Context, const char* Input, const char* ExpectedError) {
     error Error = {};
 
     parser Parser;
     Parser.Init(Input);
-    value* ParseResult = Parser.ParseSExpressionSequenceUntil('\0', &Context, &Error);
+    value* ParseResult = Parser.ParseSExpressionSequenceUntil('\0', Context, &Error);
     HandleParseError(Input, &Error);
 
-    eval::EvalSequence(ParseResult, &Context, &Error);
+    eval::EvalSequence(ParseResult, Context, &Error);
 
     if (Error.Type != error::EVAL_ERROR) {
         std::printf("\033[31mExpected eval error but got none for input: \"%s\"\033[0m\n", Input);
@@ -206,6 +201,20 @@ void ExpectEvalError(const char* Input, const char* ExpectedError) {
     }
 
     std::printf("\"%s\" e-> \"%s\"\n", Input, ExpectedError);
+}
+
+void ExpectEvalError(const char* Input, const char* ExpectedError) {
+    static const int ValuePoolCapacity = 300;
+    value ValuePool[ValuePoolCapacity] = {};
+
+    mem Mem = {};
+    Mem.Init(ValuePool, ValuePoolCapacity, malloc);
+    context Context = {};
+    Context.Mem = &Mem;
+    Context.Environment = Mem.AllocFrame(&value::Nil);
+    RegisterBuiltinFunctions(Context.Environment, Context.Mem);
+
+    ExpectEvalErrorWithContext(&Context, Input, ExpectedError);
 }
 
 void StringHelperTests() {
@@ -726,6 +735,109 @@ void DefineFunctionTests() {
     );
 }
 
+context* CreateContext(size_t ValuePoolCapacity) {
+    value* ValuePool = (value*)calloc(ValuePoolCapacity, sizeof(value));
+
+    mem* Mem = (mem*)calloc(sizeof(mem), 1);
+    Mem->Init(ValuePool, (int)ValuePoolCapacity, malloc);
+    context* Context = (context*)malloc(sizeof(context));
+    Context->Mem = Mem;
+    Context->Environment = Mem->AllocFrame(&value::Nil);
+    RegisterBuiltinFunctions(Context->Environment, Context->Mem);
+    return Context;
+}
+
+void GarbageCollect(context* Context) {
+    Context->Mem->MarkAllInValuePoolDead();
+    mem::MarkAliveRecursive(Context->Environment);
+}
+
+int NumAliveInValuePool(mem* Mem) {
+    int Count = 0;
+    for (int i = 0; i < Mem->ValuePoolCapacity; i++) {
+        if (Mem->ValuePool[i].IsAlive) {
+            Count++;
+        }
+    }
+    return Count;
+}
+
+void MultipleInvocationWithGarbageCollectionTests() {
+    const size_t DefaultValuePoolCapacity = 300;
+
+
+    context* Context1 = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalResultWithContext(Context1, "(define x 41)", "x");
+    ExpectEvalResultWithContext(Context1, "x", "41");
+    ExpectEvalResultWithContext(Context1, "(set! x 42) x", "42");
+    ExpectEvalResultWithContext(Context1, "x", "42");
+
+
+    context* Context2 = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalErrorWithContext(Context2, "x", "EVAL_UNDEFINED_SYMBOL");
+
+
+    context* Context3 = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalResultWithContext(Context3, "(define a '(1 2 3))", "a");
+    GarbageCollect(Context3);
+    ExpectEvalResultWithContext(Context3, "a", "(1 2 3)");
+
+
+    context* Context4 = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalResultWithContext(
+        Context4,
+        "(define (make-adder x) (lambda (y) (+ x y))) "
+        "(define add10 (make-adder 10))",
+        "add10"
+    );
+    GarbageCollect(Context4);
+    ExpectEvalResultWithContext(Context4, "(add10 5)", "15");
+
+
+    context* Context5 = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalResultWithContext(
+        Context5,
+        "(define (make-counter) "
+        "  (begin "
+        "    (define n 0) "
+        "    (lambda () (begin (set! n (+ n 1)) n)))) "
+        "(define c (make-counter)) ",
+        "c"
+    );
+    GarbageCollect(Context5);
+    ExpectEvalResultWithContext(Context5, "(c)", "1");
+    GarbageCollect(Context5);
+    ExpectEvalResultWithContext(Context5, "(c)", "2");
+
+
+    context* Context6 = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalResultWithContext(
+        Context6,
+        "(define (even? n) (if (= n 0) #t (odd? (- n 1)))) "
+        "(define (odd?  n) (if (= n 0) #f (even? (- n 1)))) ",
+        "odd?"
+    );
+    GarbageCollect(Context6);
+    ExpectEvalResultWithContext(Context6, "(even? 10)", "#t");
+    GarbageCollect(Context6);
+    ExpectEvalResultWithContext(Context6, "(odd?  10)", "#f");
+
+
+    context* Context7 = CreateContext(200); // You may have to tweak this number
+    ExpectEvalResultWithContext(Context7, "(define z '(z))", "z");
+    ExpectEvalResultWithContext(Context7, "(define tmp '())", "tmp");
+    for (int i = 0; i < 50; i++) {
+        ExpectEvalResultWithContext(
+            Context7,
+            "(set! tmp '(a b c d e f g h i j k l m n o p q r)) "
+            "(set! tmp '()) ",
+            "#<unspecified>"
+        );
+        GarbageCollect(Context7);
+    }
+    ExpectEvalResultWithContext(Context7, "z", "(z)");
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -749,6 +861,7 @@ int main(int argc, char** argv)
     LambdaVariadicArgsTests();
     ApplyTests();
     DefineFunctionTests();
+    MultipleInvocationWithGarbageCollectionTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 

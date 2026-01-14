@@ -115,17 +115,17 @@ struct mem {
     typedef void* (*alloc_func)(size_t NumBytes);
 
     value* ValuePool;
-    int ValueCapacity;
+    int ValuePoolCapacity;
     alloc_func AllocFunc;
 
     void Init(value* Pool, int Capacity, alloc_func Alloc) {
         ValuePool = Pool;
-        ValueCapacity = Capacity;
+        ValuePoolCapacity = Capacity;
         AllocFunc = Alloc;
     }
 
     value* AllocValue(value::type Type = value::NIL) {
-        for (int i=0; i<ValueCapacity; i++) {
+        for (int i=0; i<ValuePoolCapacity; i++) {
             if (ValuePool[i].IsAlive == false) {
                 ValuePool[i] = {};
                 ValuePool[i].Type = Type;
@@ -177,6 +177,36 @@ struct mem {
         Value->Frame.Parent = Parent;
         Value->Frame.Bindings = &value::Nil;
         return Value;
+    }
+
+    void MarkAllInValuePoolDead() {
+        for (int i=0; i<ValuePoolCapacity; i++) {
+            ValuePool[i].IsAlive = false;
+        }
+    }
+
+    static void MarkAliveRecursive(value* Value) {
+        if (Value->IsAlive) {
+            return;
+        }
+
+        Value->IsAlive = true;
+
+        switch (Value->Type){
+            case value::COMPOUND_PROCEDURE:
+            case value::PAIR:
+            {
+                MarkAliveRecursive(Value->Pair.Car);
+                MarkAliveRecursive(Value->Pair.Cdr);
+            } break;
+            case value::FRAME: {
+                MarkAliveRecursive(Value->Frame.Parent);
+                MarkAliveRecursive(Value->Frame.Bindings);
+            } break;
+            default: {
+                // No action needed
+            } break;
+        }
     }
 };
 
