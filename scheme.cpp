@@ -76,17 +76,11 @@ struct value {
         PAIR,
         PRIMITIVE_PROCEDURE,
         COMPOUND_PROCEDURE,
-        FRAME,
     };
 
     struct pair {
         value* Car;
         value* Cdr;
-    };
-
-    struct frame {
-        value* Parent;
-        value* Bindings;
     };
 
     bool IsAlive;
@@ -97,7 +91,6 @@ struct value {
         const char* Symbol;
         pair Pair;
         primitive_func_ptr PrimitiveProcedure;
-        frame Frame;
     };
 
     static value Unspecified;
@@ -173,9 +166,10 @@ struct mem {
     }
 
     value* AllocFrame(value* Parent) {
-        value* Value = AllocValue(value::FRAME);
-        Value->Frame.Parent = Parent;
-        Value->Frame.Bindings = &value::Nil;
+        value* Value = AllocValue(value::PAIR);
+        // NOTE: In a Frame, the Car is the proper list of bindings, and the Cdr is the parent frame
+        Value->Pair.Car = &value::Nil;
+        Value->Pair.Cdr = Parent;
         return Value;
     }
 
@@ -193,15 +187,11 @@ struct mem {
         Value->IsAlive = true;
 
         switch (Value->Type){
-            case value::COMPOUND_PROCEDURE:
             case value::PAIR:
+            case value::COMPOUND_PROCEDURE:
             {
                 MarkAliveRecursive(Value->Pair.Car);
                 MarkAliveRecursive(Value->Pair.Cdr);
-            } break;
-            case value::FRAME: {
-                MarkAliveRecursive(Value->Frame.Parent);
-                MarkAliveRecursive(Value->Frame.Bindings);
             } break;
             default: {
                 // No action needed
@@ -418,9 +408,6 @@ void ValueToString(value* Value, string_builder* StringBuilder) {
         case value::COMPOUND_PROCEDURE: {
             StringBuilder->String("#<compound-procedure>");
         } break;
-        case value::FRAME: {
-            FATAL_ERROR("FRAME_TO_STRING");
-        } break;
     }
 }
 
@@ -520,10 +507,6 @@ struct eval {
             case value::PAIR: return EqualQ(Car(A), Car(B)) && EqualQ(Cdr(A), Cdr(B));
             case value::PRIMITIVE_PROCEDURE: return A->PrimitiveProcedure == B->PrimitiveProcedure;
             case value::COMPOUND_PROCEDURE: return A == B;
-            case value::FRAME: {
-                FATAL_ERROR("FRAME_EQUAL");
-                return false;
-            } break;
         }
     }
 
@@ -545,7 +528,7 @@ struct eval {
 
     static void ExtendEnvironment(value* Name, value* Value, value* Environment, mem* Mem) {
         value* Entry = Cons(Name, Value, Mem);
-        Environment->Frame.Bindings = Cons(Entry, Environment->Frame.Bindings, Mem);
+        Environment->Pair.Car = Cons(Entry, Environment->Pair.Car, Mem);
     }
 
     static void ExtendEnvironmentWithLists(value* Names, value* Values, value* Environment, mem* Mem) {
@@ -714,24 +697,19 @@ struct eval {
     }
 
     static value* Lookup(value* Expr, value* Environment, error* Error) {
-        value* FrameValue = Assoc(Expr, Environment->Frame.Bindings, Error); CHECK_ERROR();
+        value* FrameValue = Assoc(Expr, Environment->Pair.Car, Error); CHECK_ERROR();
         if (NotNullQ(FrameValue)) {
             return FrameValue;
         }
-        if (NullQ(Environment->Frame.Parent)) {
+        if (NullQ(Environment->Pair.Cdr)) {
             return &value::Nil;
         }
-        return Lookup(Expr, Environment->Frame.Parent, Error);
+        return Lookup(Expr, Environment->Pair.Cdr, Error);
     }
 
     static value* Eval(value* Expr, context* Context, error* Error) {
         (void)Context;
         switch (Expr->Type) {
-            case value::FRAME: {
-                FATAL_ERROR("FRAME_EVAL");
-                return nullptr;
-            } break;
-
             case value::UNSPECIFIED:
             case value::NIL:
             case value::BOOLEAN:
@@ -949,7 +927,7 @@ struct eval {
 void ExtendEnvironmentWithPrimitiveProcedure(value* Environment, const char* Name, primitive_func_ptr Proc, mem* Mem) {
     value* Symbol = Mem->AllocSymbol(Name);
     value* Entry = Cons(Symbol, Mem->AllocPrimitiveProcedure(Proc), Mem);
-    Environment->Frame.Bindings = Cons(Entry, Environment->Frame.Bindings, Mem);
+    Environment->Pair.Car = Cons(Entry, Environment->Pair.Car, Mem);
 }
 
 void RegisterBuiltinFunctions(value* Environment, mem* Mem) {
