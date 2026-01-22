@@ -349,6 +349,31 @@ void EvalQuoteShorthandTests() {
     ExpectParseResult("''a", "(quote (quote a))");
 }
 
+void IfAndBeginTests() {
+    ExpectEvalResult("(if #t 'yes 'no)", "yes");
+    ExpectEvalResult("(if #f 'yes 'no)", "no");
+    ExpectEvalResult("(if #t 'ok (quote))", "ok"); // (quote) would error if evaluated
+    ExpectEvalResult("(if #f (quote) 'ok)", "ok");
+    ExpectEvalError("(if)", "IF_ARGUMENT_ERROR");
+    ExpectEvalResult("(begin 'a)", "a");
+    ExpectEvalResult("(begin 'a 'b)", "b");
+    ExpectEvalResult("(begin 'a (begin 'b 'c) 'd)", "d");
+    ExpectEvalResult("(if #t (begin 'a 'b) 'no)", "b");
+    ExpectEvalResult("(begin)", "()");
+}
+
+void AndOrTests() {
+    ExpectEvalResult("(and)", "#t");
+    ExpectEvalResult("(and 'a 'b 'c)", "c");
+    ExpectEvalResult("(and #t 'hello)", "hello");
+    ExpectEvalResult("(and #t #f (quote) 'a)", "#f");
+
+    ExpectEvalResult("(or)", "#f");
+    ExpectEvalResult("(or #f 'a (quote))", "a");
+    ExpectEvalResult("(or #f #f 'x)", "x");
+    ExpectEvalResult("(or #f #f #f)", "#f");
+}
+
 void ExtendableGlobalEnvironmentTests() {
     ExpectEvalResult("#t #f", "#f");
 
@@ -478,31 +503,6 @@ void NumberTests() {
     ExpectEvalError("(= 'a 'b)", "EQUALS_NON_NUMBER_ARGUMENT");
     ExpectEvalResult("(= 0 1)", "#f");
     ExpectEvalResult("(= 3 3)", "#t");
-}
-
-void IfAndBeginTests() {
-    ExpectEvalResult("(if #t 'yes 'no)", "yes");
-    ExpectEvalResult("(if #f 'yes 'no)", "no");
-    ExpectEvalResult("(if #t 'ok (car '()))", "ok"); // This would error if evaluated
-    ExpectEvalResult("(if #f (car '()) 'ok)", "ok");
-    ExpectEvalResult("(if (boolean? #t) 'yes 'no)", "yes");
-    ExpectEvalError("(if)", "IF_ARGUMENT_ERROR");
-    ExpectEvalResult("(begin 'a)", "a");
-    ExpectEvalResult("(begin 'a 'b)", "b");
-    ExpectEvalResult("(begin 'a (begin 'b 'c) 'd)", "d");
-    ExpectEvalResult("(if #t (begin 'a 'b) 'no)", "b");
-}
-
-void AndOrTests() {
-    ExpectEvalResult("(and)", "#t");
-    ExpectEvalResult("(and 1 2 3)", "3");
-    ExpectEvalResult("(and #t 'hello)", "hello");
-    ExpectEvalResult("(and #t #f (car '()) 7)", "#f");
-
-    ExpectEvalResult("(or)", "#f");
-    ExpectEvalResult("(or #f 10 (car '()))", "10");
-    ExpectEvalResult("(or #f #f 'x)", "x");
-    ExpectEvalResult("(or #f #f #f)", "#f");
 }
 
 void LetSetTests() {
@@ -838,6 +838,56 @@ void MultipleInvocationWithGarbageCollectionTests() {
     ExpectEvalResultWithContext(Context7, "z", "(z)");
 }
 
+void ListOperationAndFunctionalConceptTests() {
+    const size_t DefaultValuePoolCapacity = 400;
+
+    context* Context = CreateContext(DefaultValuePoolCapacity);
+    ExpectEvalResultWithContext(Context,
+        "(define (length xs) "
+        "  (if (null? xs) 0 (+ 1 (length (cdr xs)))))",
+        // "  1)", // TODO: Replace with actual implementation
+        "length"
+    );
+    ExpectEvalResultWithContext(Context, "(length '())", "0");
+    ExpectEvalResultWithContext(Context, "(length '(a b c d e))", "5");
+    GarbageCollect(Context);
+
+    // NOTE: append duplicates a (it has to), but not b
+    ExpectEvalResultWithContext(Context,
+        "(define (append a b) "
+        "  (if (null? a) b (cons (car a) (append (cdr a) b))))",
+        // "  '())", // TODO: Replace with actual implementation
+        "append"
+    );
+    ExpectEvalResultWithContext(Context, "(append '() '())", "()");
+    ExpectEvalResultWithContext(Context, "(append '(a) '())", "(a)");
+    ExpectEvalResultWithContext(Context, "(append '() '(b))", "(b)");
+    ExpectEvalResultWithContext(Context, "(append '(a b) '(c d))", "(a b c d)");
+    GarbageCollect(Context);
+
+    ExpectEvalResultWithContext(Context,
+        "(define (reverse xs) "
+        "  (if (null? xs) '() (append (reverse (cdr xs)) (list (car xs)))))",
+        // "  '())", // TODO: Replace with actual implementation
+        "reverse"
+    );
+    ExpectEvalResultWithContext(Context, "(reverse '())", "()");
+    ExpectEvalResultWithContext(Context, "(reverse '(a b c d))", "(d c b a)");
+    GarbageCollect(Context);
+
+    ExpectEvalResultWithContext(Context,
+        "(define (map f xs) "
+        "  (if (null? xs) '() "
+        "    (cons (f (car xs)) (map f (cdr xs)))))",
+        // "  '())", // TODO: Replace with actual implementation
+        "map"
+    );
+    ExpectEvalResultWithContext(Context, "(map (lambda (x) (* x 2)) '(1 2 3))", "(2 4 6)");
+    ExpectEvalResultWithContext(Context, "(map car '((a b) (2 3) (e f)))", "(a 2 e)");
+    GarbageCollect(Context);
+
+}
+
 int main(int argc, char** argv)
 {
     (void)argc;
@@ -850,11 +900,11 @@ int main(int argc, char** argv)
     ValuePoolAllocTests();
     EvalQuoteTests();
     EvalQuoteShorthandTests();
+    IfAndBeginTests();
+    AndOrTests();
     ExtendableGlobalEnvironmentTests();
     PrimitiveProcedureTests();
     NumberTests();
-    IfAndBeginTests();
-    AndOrTests();
     LetSetTests();
     LambdaTests();
     DottedPairTests();
@@ -862,6 +912,7 @@ int main(int argc, char** argv)
     ApplyTests();
     DefineFunctionTests();
     MultipleInvocationWithGarbageCollectionTests();
+    ListOperationAndFunctionalConceptTests();
 
     std::printf("\033[32mAll tests passed.\033[0m\n");
 
