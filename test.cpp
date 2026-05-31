@@ -380,6 +380,7 @@ void ExtendableGlobalEnvironmentTests() {
     ExpectEvalResult("(define test 'a) test", "a");
     ExpectEvalResult("(define test 'a) (define test2 'b) test", "a");
     ExpectEvalResult("(define test 'a) (define test2 'b) test2", "b");
+    ExpectEvalResult("(define (test) #t 42) (test)", "42"); // Multiple expressions in body, should return last one
 
     ExpectEvalError("(define q)", "DEFINE_ARGUMENT_ERROR");
     ExpectEvalError("(define 1 'a)", "DEFINE_ARGUMENT_ERROR");

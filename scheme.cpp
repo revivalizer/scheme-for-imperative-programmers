@@ -542,7 +542,7 @@ struct eval {
     }
 
     static value* EvalDefine(value* Operands, context* Context, error* Error) {
-        EVAL_ASSERT(ListLength(Operands) == 2, "DEFINE_ARGUMENT_ERROR");
+        EVAL_ASSERT(ListLength(Operands) >= 2, "DEFINE_ARGUMENT_ERROR");
         if (PairQ(Car(Operands))) {
             value* NameAndArgs = Car(Operands);
             value* Body = Cdr(Operands);
