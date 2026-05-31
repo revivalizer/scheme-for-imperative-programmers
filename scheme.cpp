@@ -261,7 +261,7 @@ struct parser {
     }
 
     void EatWhitespace() {
-        while (IsWhitespace(C()) || C() == ';') {
+        while (IsWhitespace(C())) {
             if (C() == '\n') {
                 Next();
                 Row++;
