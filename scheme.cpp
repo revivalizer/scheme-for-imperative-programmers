@@ -446,7 +446,9 @@ struct eval {
             return &value::Nil;
         }
 
-        return Cons(eval::Eval(Car(List), Context, Error), EvalList(Cdr(List), Context, Error), Context->Mem);
+        value* Head = Eval(Car(List), Context, Error);
+        value* Tail = EvalList(Cdr(List), Context, Error);
+        return Cons(Head, Tail, Context->Mem);
     }
 
     static bool NullQ(value* Value) {
@@ -651,7 +653,9 @@ struct eval {
             EVAL_ASSERT(ProperListQ(EvaluatedList), "APPLY_ARGUMENT_ERROR");
             return EvaluatedList;
         } else {
-            return Cons(Eval(Car(Args), Context, Error), EvalApplyArgsRec(Cdr(Args), Context, Error), Context->Mem);
+            value* Head = Eval(Car(Args), Context, Error);
+            value* Tail = EvalApplyArgsRec(Cdr(Args), Context, Error);
+            return Cons(Head, Tail, Context->Mem);
         }
     }
 
