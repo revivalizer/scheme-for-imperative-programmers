@@ -648,7 +648,6 @@ struct eval {
     static value* EvalApplyArgsRec(value* Args, context* Context, error* Error) {
         EVAL_ASSERT(ListQ(Args), "APPLY_ARGUMENT_ERROR");
         if (NullQ(Cdr(Args))) {
-            EVAL_ASSERT(ListQ(Car(Args)), "APPLY_ARGUMENT_ERROR");
             value* EvaluatedList = Eval(Car(Args), Context, Error); CHECK_ERROR();
             EVAL_ASSERT(ProperListQ(EvaluatedList), "APPLY_ARGUMENT_ERROR");
             return EvaluatedList;

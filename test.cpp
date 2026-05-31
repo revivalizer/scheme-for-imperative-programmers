@@ -672,6 +672,7 @@ void ApplyTests() {
     ExpectEvalResult("(apply + '(1 2 3 4))", "10");
     ExpectEvalResult("(apply + 1 2 '(3 4))", "10");
     ExpectEvalResult("(apply (lambda () 42) '())", "42");
+    ExpectEvalResult("(let ((l '(1 2))) (apply + l))", "3");
     ExpectEvalResult(
         "(let ((f (lambda (a b c) (list a b c))))"
         "  (apply f '(1 2 3)))",
