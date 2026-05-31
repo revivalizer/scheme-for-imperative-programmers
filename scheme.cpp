@@ -514,7 +514,7 @@ struct eval {
 
     static value* Assoc(value* Needle, value* Haystack, error* Error) {
         if (NullQ(Haystack)) {
-            return &value::Nil;
+            return &value::False;
         }
 
         value* Pair = Car(Haystack);
@@ -701,7 +701,7 @@ struct eval {
 
     static value* Lookup(value* Expr, value* Environment, error* Error) {
         value* FrameValue = Assoc(Expr, Environment->Pair.Car, Error); CHECK_ERROR();
-        if (NotNullQ(FrameValue)) {
+        if (TrueQ(FrameValue)) {
             return FrameValue;
         }
         if (NullQ(Environment->Pair.Cdr)) {

@@ -404,11 +404,13 @@ void PrimitiveProcedureTests() {
 
     ExpectEvalResult("(assoc 'joan '((john smith) (joan doe) (marcia law)))", "(joan doe)");
     ExpectEvalResult("(assoc 'john '((john smith) (joan doe) (marcia law)))", "(john smith)");
-    ExpectEvalResult("(assoc 'jean '((john smith) (joan doe) (marcia law)))", "()");
-    ExpectEvalResult("(assoc 'a '())", "()");
-    ExpectEvalResult("(assoc 'b '((c d) (e f)))", "()");
+    ExpectEvalResult("(assoc 'jean '((john smith) (joan doe) (marcia law)))", "#f");
+    ExpectEvalResult("(assoc 'a '())", "#f");
+    ExpectEvalResult("(assoc 'b '((c d) (e f)))", "#f");
     ExpectEvalResult("(assoc 'c '((c d) (e f)))", "(c d)");
     ExpectEvalResult("(assoc 'e '((c d) (e f)))", "(e f)");
+    ExpectEvalResult("(if (assoc 'a '((c d) (e f))) #t #f)", "#f");
+    ExpectEvalResult("(if (assoc 'c '((c d) (e f))) #t #f)", "#t");
 
     ExpectEvalResult("(pair? '())", "#f");
     ExpectEvalResult("(pair? '#f)", "#f");
